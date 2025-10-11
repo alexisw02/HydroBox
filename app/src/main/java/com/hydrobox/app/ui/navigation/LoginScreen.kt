@@ -1,43 +1,180 @@
 package com.hydrobox.app.ui.navigation
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.hydrobox.app.auth.AuthViewModel
+import com.hydrobox.app.R
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.platform.LocalFocusManager
 
 @Composable
-fun LoginScreen(onLoggedIn: () -> Unit) {
-    var user by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
+fun LoginScreen(
+    onLoggedIn: () -> Unit,
+    vm: AuthViewModel = viewModel()
+) {
+    var email by remember { mutableStateOf("alexisadmin@local.test") }
+    var pass by remember { mutableStateOf("qwerty") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var showPass by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Login (demo)")
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = user,
-            onValueChange = { user = it },
-            label = { Text("Usuario") },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                focusedLabelColor = MaterialTheme.colorScheme.primary
-            )
+    Box(Modifier.fillMaxSize()) {
+        // Fondo: foto + velo degradado
+        Image(
+            painter = painterResource(R.drawable.bg_login),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().alpha(0.80f)
         )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = pass,
-            onValueChange = { pass = it },
-            label = { Text("Contraseña") },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                focusedLabelColor = MaterialTheme.colorScheme.primary
-            )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    // degradado sutil para mejorar contraste del card
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Black.copy(alpha = 0.30f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.35f)
+                        )
+                    )
+                )
         )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onLoggedIn) { Text("Entrar") }
+
+        // Contenido
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Card tipo "glass" (opaca sutilmente, con esquinas suaves)
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                tonalElevation = 6.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                shadowElevation = 10.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
+                Column(
+                    Modifier
+                        .padding(vertical = 28.dp, horizontal = 22.dp)
+                        .imePadding(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "HydroBox",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Iniciar sesión",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(Modifier.height(20.dp))
+
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Email") },
+                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            imeAction = ImeAction.Next
+                        )
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = pass,
+                        onValueChange = { pass = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Contraseña") },
+                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                        singleLine = true,
+                        visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            val text = if (showPass) "Ocultar" else "Mostrar"
+                            TextButton(onClick = { showPass = !showPass }) { Text(text) }
+                        },
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focus.clearFocus()
+                                if (!loading) {
+                                    loading = true; error = null
+                                    vm.login(email, pass) { ok ->
+                                        loading = false
+                                        if (ok) onLoggedIn() else error = "Credenciales inválidas"
+                                    }
+                                }
+                            }
+                        )
+                    )
+
+                    if (error != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(error!!, color = MaterialTheme.colorScheme.error)
+                    }
+
+                    Spacer(Modifier.height(18.dp))
+
+                    Button(
+                        onClick = {
+                            focus.clearFocus()
+                            loading = true; error = null
+                            vm.login(email, pass) { ok ->
+                                loading = false
+                                if (ok) onLoggedIn() else error = "Credenciales inválidas"
+                            }
+                        },
+                        enabled = !loading,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        if (loading) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Text("Entrar")
+                        }
+                    }
+                }
+            }
+        }
     }
 }

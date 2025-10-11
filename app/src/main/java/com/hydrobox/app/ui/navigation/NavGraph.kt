@@ -1,26 +1,19 @@
 package com.hydrobox.app.ui.navigation
 
 import android.net.Uri
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import com.hydrobox.app.ui.components.HydroTopBar
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.ToggleOn
-import androidx.compose.material.icons.filled.Yard
-import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -71,24 +64,49 @@ fun HydroNavRoot() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    val admin = remember {
-        AdminUser(name = "Hydro", lastName = "Admin", role = "Administrador", email = "admin@hydrobox.local")
-    }
-    var adminName by remember { mutableStateOf("${admin.name} ${admin.lastName}") }
-    var avatarUri by remember { mutableStateOf<Uri?>(null) }
+    val authVM: com.hydrobox.app.auth.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val auth = authVM.authState.collectAsState(initial = null).value ?: return
+    val user = authVM.currentUser.collectAsState().value
 
-    fun navigateFromDrawer(route: String) {
-        scope.launch { drawerState.close() }
-        nav.navigate(route) {
-            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
-        }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    val admin: AdminUser = remember(user) {
+        val name = user?.name.orEmpty()
+        val last  = user?.lastName.orEmpty()
+        val email = user?.email ?: "admin@hydrobox.local"
+        AdminUser(
+            name = if (name.isNotBlank()) name else "Hydro",
+            lastName = if (last.isNotBlank()) last else "Admin",
+            role = "Administrador",
+            email = email
+        )
     }
+    var adminName by remember(admin) { mutableStateOf("${admin.name} ${admin.lastName}".trim()) }
+    var avatarUri by remember { mutableStateOf<Uri?>(null) }
 
     val showBottomBar = current.isInHierarchyOf(
         Route.Resume.path, Route.Sensors.path, Route.Actuators.path, Route.History.path, Route.Crops.path
     )
+    val isLogin = current.isInHierarchyOf(Route.Login.path)
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Cerrar sesión") },
+            text = { Text("¿Está seguro que desea cerrar sesión?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    scope.launch { drawerState.close() }
+                    authVM.logout()
+                    nav.navigate(Route.Login.path) { popUpTo(0) { inclusive = true } }
+                }) { Text("Aceptar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -97,23 +115,32 @@ fun HydroNavRoot() {
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
                 drawerContentColor = MaterialTheme.colorScheme.onSurface
             ) {
-                DrawerHeader(
-                    adminName = adminName,
-                    avatarUri = avatarUri,
-                    onAccount = { navigateFromDrawer(Route.Account.path) }
-                )
+                DrawerHeader(adminName, avatarUri) {
+                    scope.launch { drawerState.close() }
+                    nav.navigate(Route.Account.path) {
+                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 DrawerContent(
-                    onResume = { navigateFromDrawer(Route.Resume.path) },
-                    onAccount = { navigateFromDrawer(Route.Account.path) },
-                    onSettings = { navigateFromDrawer(Route.Settings.path) },
-                    onNotification = { navigateFromDrawer(Route.Notification.path) },
+                    onResume = {
+                        scope.launch { drawerState.close() }
+                        nav.navigate(Route.Resume.path) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true; restoreState = true
+                        }
+                    },
+                    onAccount = {
+                        scope.launch { drawerState.close() }
+                        nav.navigate(Route.Account.path)
+                    },
+                    onSettings = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
+                    onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
                     onLogout = {
                         scope.launch { drawerState.close() }
-                        nav.navigate(Route.Login.path) {
-                            popUpTo(nav.graph.findStartDestination().id) { inclusive = true }
-                            launchSingleTop = true
-                        }
+                        showLogoutDialog = true
                     }
                 )
             }
@@ -122,11 +149,13 @@ fun HydroNavRoot() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                HydroTopBar(
-                    inRootTabs = showBottomBar,
-                    onMenuClick = { scope.launch { drawerState.open() } },
-                    onNavigateUp = { nav.navigateUp() }
-                )
+                if (!isLogin) {
+                    HydroTopBar(
+                        inRootTabs = showBottomBar,
+                        onMenuClick = { scope.launch { drawerState.open() } },
+                        onNavigateUp = { nav.navigateUp() }
+                    )
+                }
             },
             bottomBar = {
                 if (showBottomBar) {
@@ -160,11 +189,22 @@ fun HydroNavRoot() {
                 }
             }
         ) { padding ->
+            val start = if (auth.isLoggedIn) Route.Resume.path else Route.Login.path
+
             NavHost(
                 navController = nav,
-                startDestination = Route.Resume.path,
+                startDestination = start,
                 modifier = Modifier.padding(padding)
             ) {
+                composable(Route.Login.path) {
+                    LoginScreen(
+                        onLoggedIn = {
+                            nav.navigate(Route.Resume.path) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Route.Resume.path)   { ResumeScreen(paddingValues = PaddingValues()) }
                 composable(Route.Sensors.path)  { SensorsScreen(paddingValues = PaddingValues()) }
                 composable(Route.Actuators.path){ ActuatorsScreen(paddingValues = PaddingValues()) }
@@ -174,15 +214,22 @@ fun HydroNavRoot() {
                 composable(Route.Account.path)  { AccountScreen(user = admin) }
                 composable(Route.Settings.path) { SettingsScreen() }
                 composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }
-                composable(Route.Login.path)    {
-                    LoginScreen(
-                        onLoggedIn = {
-                            nav.navigate(Route.Resume.path) { popUpTo(0) { inclusive = true } }
-                        }
-                    )
-                }
             }
         }
+    }
+}
+
+private fun navigateFromDrawer(
+    nav: androidx.navigation.NavHostController,
+    drawerState: DrawerState,
+    route: String,
+    scope: kotlinx.coroutines.CoroutineScope
+) {
+    scope.launch { drawerState.close() }
+    nav.navigate(route) {
+        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }
 
