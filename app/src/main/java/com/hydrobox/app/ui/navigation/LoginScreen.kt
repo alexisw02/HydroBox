@@ -1,5 +1,6 @@
 package com.hydrobox.app.ui.navigation
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 @Composable
 fun LoginScreen(
     onLoggedIn: () -> Unit,
+    setGlobalBusy: (Boolean) -> Unit = {},
     vm: AuthViewModel = viewModel()
 ) {
     var email by remember { mutableStateOf("alexisadmin@local.test") }
@@ -41,10 +43,29 @@ fun LoginScreen(
     var showPass by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
+    val tryLogin: () -> Unit = remember(email, pass, loading) {
+        {
+            if (!loading) {
+                focus.clearFocus()
+                loading = true; error = null
+                setGlobalBusy(true)
+                vm.login(email, pass) { ok ->
+                    loading = false
+                    if (ok) {
+                        onLoggedIn()
+                    } else {
+                        error = "Credenciales inválidas"
+                        setGlobalBusy(false)
+                    }
+                }
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
-        // Fondo: foto + velo degradado
+        val bg = painterResource(id = R.drawable.bg_login)
         Image(
-            painter = painterResource(R.drawable.bg_login),
+            painter = bg,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().alpha(0.80f)
@@ -53,7 +74,6 @@ fun LoginScreen(
             Modifier
                 .fillMaxSize()
                 .background(
-                    // degradado sutil para mejorar contraste del card
                     Brush.verticalGradient(
                         listOf(
                             Color.Black.copy(alpha = 0.30f),
@@ -63,41 +83,26 @@ fun LoginScreen(
                     )
                 )
         )
-
-        // Contenido
         Box(
             Modifier
                 .fillMaxSize()
                 .padding(20.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Card tipo "glass" (opaca sutilmente, con esquinas suaves)
             Surface(
                 shape = RoundedCornerShape(28.dp),
-                tonalElevation = 6.dp,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                shadowElevation = 10.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
+                tonalElevation = 2.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                shadowElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth().wrapContentHeight()
             ) {
                 Column(
-                    Modifier
-                        .padding(vertical = 28.dp, horizontal = 22.dp)
-                        .imePadding(),
+                    Modifier.padding(vertical = 28.dp, horizontal = 22.dp).imePadding(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        "HydroBox",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Text("HydroBox", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Iniciar sesión",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                    )
+                    Text("Iniciar sesión", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
 
                     Spacer(Modifier.height(20.dp))
 
@@ -106,11 +111,9 @@ fun LoginScreen(
                         onValueChange = { email = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Email") },
-                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                        leadingIcon = { Icon(Icons.Filled.Email, null) },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions.Default.copy(
-                            imeAction = ImeAction.Next
-                        )
+                        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Next)
                     )
 
                     Spacer(Modifier.height(12.dp))
@@ -120,28 +123,16 @@ fun LoginScreen(
                         onValueChange = { pass = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Contraseña") },
-                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                        leadingIcon = { Icon(Icons.Filled.Lock, null) },
                         singleLine = true,
                         visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
-                            val text = if (showPass) "Ocultar" else "Mostrar"
-                            TextButton(onClick = { showPass = !showPass }) { Text(text) }
-                        },
-                        keyboardOptions = KeyboardOptions.Default.copy(
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focus.clearFocus()
-                                if (!loading) {
-                                    loading = true; error = null
-                                    vm.login(email, pass) { ok ->
-                                        loading = false
-                                        if (ok) onLoggedIn() else error = "Credenciales inválidas"
-                                    }
-                                }
+                            TextButton(onClick = { showPass = !showPass }) {
+                                Text(if (showPass) "Ocultar" else "Mostrar")
                             }
-                        )
+                        },
+                        keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { tryLogin() }) // <- PARAMETRO CORRECTO
                     )
 
                     if (error != null) {
@@ -152,23 +143,15 @@ fun LoginScreen(
                     Spacer(Modifier.height(18.dp))
 
                     Button(
-                        onClick = {
-                            focus.clearFocus()
-                            loading = true; error = null
-                            vm.login(email, pass) { ok ->
-                                loading = false
-                                if (ok) onLoggedIn() else error = "Credenciales inválidas"
-                            }
-                        },
+                        onClick = { tryLogin() },
                         enabled = !loading,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).animateContentSize(),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         if (loading) {
-                            CircularProgressIndicator(
-                                strokeWidth = 2.5.dp,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            CircularProgressIndicator(strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ingresando…")
                         } else {
                             Text("Entrar")
                         }

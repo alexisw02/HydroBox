@@ -5,11 +5,14 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import com.hydrobox.app.ui.components.HydroTopBar
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.animation.Crossfade
 import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,19 +37,10 @@ sealed class Route(val path: String) {
 
     data object Account : Route("account")
     data object Settings : Route("settings")
-    data object Login : Route("login")
     data object Notification : Route("notification")
 }
 
 data class BottomItem(val route: Route, val label: String, val icon: ImageVector)
-
-private val bottomItems = listOf(
-    BottomItem(Route.Resume, "Resumen", Icons.Filled.Dashboard),
-    BottomItem(Route.Sensors, "Sensores", Icons.Filled.Speed),
-    BottomItem(Route.Actuators, "Actuadores", Icons.Filled.ToggleOn),
-    BottomItem(Route.History, "Historial", Icons.Filled.History),
-    BottomItem(Route.Crops, "Gestión", Icons.Filled.Yard)
-)
 
 data class AdminUser(
     val name: String,
@@ -57,28 +51,24 @@ data class AdminUser(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HydroNavRoot() {
+private fun MainScaffold(
+    authVM: com.hydrobox.app.auth.AuthViewModel
+) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    val authVM: com.hydrobox.app.auth.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val auth = authVM.authState.collectAsState(initial = null).value ?: return
-    val user = authVM.currentUser.collectAsState().value
-
     var showLogoutDialog by remember { mutableStateOf(false) }
 
-    val admin: AdminUser = remember(user) {
-        val name = user?.name.orEmpty()
-        val last  = user?.lastName.orEmpty()
-        val email = user?.email ?: "admin@hydrobox.local"
+    val user = authVM.currentUser.collectAsState().value
+    val admin = remember(user) {
         AdminUser(
-            name = if (name.isNotBlank()) name else "Hydro",
-            lastName = if (last.isNotBlank()) last else "Admin",
-            role = "Administrador",
-            email = email
+            name     = user?.name.orEmpty().ifBlank { "Hydro" },
+            lastName = user?.lastName.orEmpty().ifBlank { "Admin" },
+            role     = "Administrador",
+            email    = user?.email ?: "admin@hydrobox.local"
         )
     }
     var adminName by remember(admin) { mutableStateOf("${admin.name} ${admin.lastName}".trim()) }
@@ -87,7 +77,6 @@ fun HydroNavRoot() {
     val showBottomBar = current.isInHierarchyOf(
         Route.Resume.path, Route.Sensors.path, Route.Actuators.path, Route.History.path, Route.Crops.path
     )
-    val isLogin = current.isInHierarchyOf(Route.Login.path)
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -99,12 +88,9 @@ fun HydroNavRoot() {
                     showLogoutDialog = false
                     scope.launch { drawerState.close() }
                     authVM.logout()
-                    nav.navigate(Route.Login.path) { popUpTo(0) { inclusive = true } }
                 }) { Text("Aceptar") }
             },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) { Text("Cancelar") }
-            }
+            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("Cancelar") } }
         )
     }
 
@@ -113,15 +99,11 @@ fun HydroNavRoot() {
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
-                drawerContentColor = MaterialTheme.colorScheme.onSurface
+                drawerContentColor   = MaterialTheme.colorScheme.onSurface
             ) {
                 DrawerHeader(adminName, avatarUri) {
                     scope.launch { drawerState.close() }
-                    nav.navigate(Route.Account.path) {
-                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
+                    nav.navigate(Route.Account.path)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 DrawerContent(
@@ -132,16 +114,10 @@ fun HydroNavRoot() {
                             launchSingleTop = true; restoreState = true
                         }
                     },
-                    onAccount = {
-                        scope.launch { drawerState.close() }
-                        nav.navigate(Route.Account.path)
-                    },
-                    onSettings = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
+                    onAccount      = { scope.launch { drawerState.close() }; nav.navigate(Route.Account.path) },
+                    onSettings     = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
                     onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
-                    onLogout = {
-                        scope.launch { drawerState.close() }
-                        showLogoutDialog = true
-                    }
+                    onLogout       = { scope.launch { drawerState.close() }; showLogoutDialog = true }
                 )
             }
         }
@@ -149,37 +125,40 @@ fun HydroNavRoot() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                if (!isLogin) {
-                    HydroTopBar(
-                        inRootTabs = showBottomBar,
-                        onMenuClick = { scope.launch { drawerState.open() } },
-                        onNavigateUp = { nav.navigateUp() }
-                    )
-                }
+                HydroTopBar(
+                    inRootTabs = showBottomBar,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onNavigateUp = { nav.navigateUp() }
+                )
             },
             bottomBar = {
                 if (showBottomBar) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface
+                        contentColor   = MaterialTheme.colorScheme.onSurface
                     ) {
-                        bottomItems.forEach { item ->
+                        listOf(
+                            BottomItem(Route.Resume, "Resumen", Icons.Filled.Dashboard),
+                            BottomItem(Route.Sensors, "Sensores", Icons.Filled.Speed),
+                            BottomItem(Route.Actuators, "Actuadores", Icons.Filled.ToggleOn),
+                            BottomItem(Route.History, "Historial", Icons.Filled.History),
+                            BottomItem(Route.Crops, "Gestión", Icons.Filled.Yard)
+                        ).forEach { item ->
                             val selected = current.isInHierarchyOf(item.route.path)
                             NavigationBarItem(
                                 selected = selected,
                                 onClick = {
                                     nav.navigate(item.route.path) {
                                         popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
+                                        launchSingleTop = true; restoreState = true
                                     }
                                 },
-                                icon = { Icon(item.icon, contentDescription = item.label) },
+                                icon  = { Icon(item.icon, contentDescription = item.label) },
                                 label = { Text(item.label) },
                                 colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedIconColor   = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    selectedTextColor   = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    indicatorColor      = MaterialTheme.colorScheme.primaryContainer,
                                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -189,32 +168,78 @@ fun HydroNavRoot() {
                 }
             }
         ) { padding ->
-            val start = if (auth.isLoggedIn) Route.Resume.path else Route.Login.path
-
             NavHost(
                 navController = nav,
-                startDestination = start,
+                startDestination = Route.Resume.path,
                 modifier = Modifier.padding(padding)
             ) {
-                composable(Route.Login.path) {
-                    LoginScreen(
-                        onLoggedIn = {
-                            nav.navigate(Route.Resume.path) {
-                                popUpTo(0) { inclusive = true }
-                            }
-                        }
-                    )
-                }
-                composable(Route.Resume.path)   { ResumeScreen(paddingValues = PaddingValues()) }
-                composable(Route.Sensors.path)  { SensorsScreen(paddingValues = PaddingValues()) }
-                composable(Route.Actuators.path){ ActuatorsScreen(paddingValues = PaddingValues()) }
-                composable(Route.History.path)  { HistoryScreen(paddingValues = PaddingValues()) }
-                composable(Route.Crops.path)    { CropsScreen(paddingValues = PaddingValues()) }
-
-                composable(Route.Account.path)  { AccountScreen(user = admin) }
-                composable(Route.Settings.path) { SettingsScreen() }
+                composable(Route.Resume.path)    { ResumeScreen(paddingValues = PaddingValues()) }
+                composable(Route.Sensors.path)   { SensorsScreen(paddingValues = PaddingValues()) }
+                composable(Route.Actuators.path) { ActuatorsScreen(paddingValues = PaddingValues()) }
+                composable(Route.History.path)   { HistoryScreen(paddingValues = PaddingValues()) }
+                composable(Route.Crops.path)     { CropsScreen(paddingValues = PaddingValues()) }
+                composable(Route.Account.path)   { AccountScreen(user = admin) }
+                composable(Route.Settings.path)  { SettingsScreen() }
                 composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }
             }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenLoading(text: String = "Cargando…") {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+        ) {
+            Row(
+                Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(26.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(text, style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+@Composable
+fun HydroNavRoot() {
+    val authVM: com.hydrobox.app.auth.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val auth = authVM.authState.collectAsState(initial = null).value ?: return
+
+    var wasLogged by rememberSaveable { mutableStateOf(auth.isLoggedIn) }
+    var gateMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(auth.isLoggedIn) {
+        if (!wasLogged && auth.isLoggedIn) {
+            gateMessage = "Entrando…"
+            delay(600)
+            gateMessage = null
+        } else if (wasLogged && !auth.isLoggedIn) {
+            gateMessage = "Cerrando sesión…"
+            delay(300)
+            gateMessage = null
+        }
+        wasLogged = auth.isLoggedIn
+    }
+
+    Crossfade(
+        targetState = Triple(auth.isLoggedIn, gateMessage, Unit),
+        label = "auth-crossfade"
+    ) { (logged, msg, _) ->
+        when {
+            msg != null -> FullScreenLoading(msg) // <- ya no es constante
+            !logged     -> LoginScreen(onLoggedIn = { }, vm = authVM)
+            else        -> MainScaffold(authVM)
         }
     }
 }

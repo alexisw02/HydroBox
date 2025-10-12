@@ -31,6 +31,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 
 import com.hydrobox.app.ui.model.Crop
 import kotlin.math.absoluteValue
@@ -117,20 +118,14 @@ private fun DaysScroller(
     val itemPx = with(density) { itemWidth.roundToPx() }
     val spacingPx = with(density) { spacing.roundToPx() }
 
-    // Longitud total de la fila (aprox; suficiente para el cálculo de offset)
     val totalContentPx = totalDays * itemPx + (totalDays - 1) * spacingPx
     val maxOffset = (totalContentPx - screenWidthPx).coerceAtLeast(0)
 
     LaunchedEffect(selectedDay, totalDays) {
         val i = (selectedDay - 1).coerceIn(0, totalDays - 1)
-
-        // Centro deseado para items intermedios
         val centerOffset = (i * (itemPx + spacingPx)) - (screenWidthPx - itemPx) / 2
-
-        // Clamping: 0 => pegado a la izquierda (día 1), maxOffset => pegado a la derecha (último)
         val targetOffset = centerOffset.coerceIn(0, maxOffset)
 
-        // Truco: desplazamos la lista a partir del primer ítem con un offset absoluto
         listState.animateScrollToItem(index = 0, scrollOffset = targetOffset)
     }
 
@@ -174,7 +169,7 @@ private fun CropHeaderCard(crop: Crop) {
                 Spacer(Modifier.width(8.dp))
                 Text("Hydrobox", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
-                AssistChip(onClick = { /* notificaciones */ }, label = { Text("Alerta") })
+                AssistChip(onClick = { }, label = { Text("Alerta") })
             }
 
             Box(
@@ -184,8 +179,8 @@ private fun CropHeaderCard(crop: Crop) {
                     .clip(RoundedCornerShape(16.dp))
                     .background(brush = Brush.verticalGradient(listOf(surface, overlay)))
             ) {
-                Image(
-                    painter = painterResource(id = crop.imageRes),
+                AsyncImage(
+                    model = crop.imageRes,
                     contentDescription = crop.displayName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()
@@ -287,7 +282,6 @@ private fun SensorsCarousel(cards: List<SensorCardData>) {
                         )
                     }
 
-                    // Dots usando el mismo pagerState
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -362,4 +356,3 @@ private fun SensorCard(
         }
     }
 }
-

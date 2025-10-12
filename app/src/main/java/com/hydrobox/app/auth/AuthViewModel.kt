@@ -12,11 +12,16 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     val authState = repo.authState
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = AuthState())
+
     val currentUser = repo.currentUser
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
-    fun login(email: String, pass: String, onResult: (Boolean)->Unit) {
-        viewModelScope.launch { onResult(repo.login(email, pass)) }
+    fun login(email: String, pass: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { repo.login(email, pass) } // <- sin calificador largo
+            onResult(ok)
+        }
     }
+
     fun logout() { viewModelScope.launch { repo.logout() } }
 }
