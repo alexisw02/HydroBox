@@ -74,7 +74,7 @@ private fun MainScaffold(
     var adminName by remember(admin) { mutableStateOf("${admin.name} ${admin.lastName}".trim()) }
     var avatarUri by remember { mutableStateOf<Uri?>(null) }
 
-    val showBottomBar = current.isInHierarchyOf(
+    val isInRootTabs = current.isInHierarchyOf(
         Route.Resume.path, Route.Sensors.path, Route.Actuators.path, Route.History.path, Route.Crops.path
     )
 
@@ -96,11 +96,12 @@ private fun MainScaffold(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = isInRootTabs,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
                 drawerContentColor   = MaterialTheme.colorScheme.onSurface
-            ) {
+                ) {
                 DrawerHeader(adminName, avatarUri) {
                     scope.launch { drawerState.close() }
                     nav.navigate(Route.Account.path)
@@ -126,13 +127,13 @@ private fun MainScaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 HydroTopBar(
-                    inRootTabs = showBottomBar,
-                    onMenuClick = { scope.launch { drawerState.open() } },
+                    inRootTabs = isInRootTabs,
+                    onMenuClick = { if (isInRootTabs) scope.launch { drawerState.open() } },
                     onNavigateUp = { nav.navigateUp() }
                 )
             },
             bottomBar = {
-                if (showBottomBar) {
+                if (isInRootTabs) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor   = MaterialTheme.colorScheme.onSurface
