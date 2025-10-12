@@ -214,34 +214,33 @@ private fun FullScreenLoading(text: String = "Cargando…") {
 
 @Composable
 fun HydroNavRoot() {
-    val authVM: com.hydrobox.app.auth.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val auth = authVM.authState.collectAsState(initial = null).value ?: return
+    val vm: com.hydrobox.app.auth.AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val auth = vm.authState.collectAsState(initial = null).value ?: return
+    val booting = vm.booting.collectAsState().value
 
     var wasLogged by rememberSaveable { mutableStateOf(auth.isLoggedIn) }
     var gateMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(auth.isLoggedIn) {
+    LaunchedEffect(booting, auth.isLoggedIn) {
+        if (booting) return@LaunchedEffect
+
         if (!wasLogged && auth.isLoggedIn) {
             gateMessage = "Entrando…"
-            delay(600)
+            kotlinx.coroutines.delay(450)
             gateMessage = null
         } else if (wasLogged && !auth.isLoggedIn) {
             gateMessage = "Cerrando sesión…"
-            delay(300)
+            kotlinx.coroutines.delay(300)
             gateMessage = null
         }
         wasLogged = auth.isLoggedIn
     }
 
-    Crossfade(
-        targetState = Triple(auth.isLoggedIn, gateMessage, Unit),
-        label = "auth-crossfade"
-    ) { (logged, msg, _) ->
-        when {
-            msg != null -> FullScreenLoading(msg) // <- ya no es constante
-            !logged     -> LoginScreen(onLoggedIn = { }, vm = authVM)
-            else        -> MainScaffold(authVM)
-        }
+    when {
+        booting            -> FullScreenLoading("Preparando…")
+        gateMessage != null-> FullScreenLoading(gateMessage!!)
+        auth.isLoggedIn    -> MainScaffold(vm)
+        else               -> LoginScreen(onLoggedIn = { }, vm = vm)
     }
 }
 

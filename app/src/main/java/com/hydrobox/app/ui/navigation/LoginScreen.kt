@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalFocusManager
 
 @Composable
@@ -36,24 +37,28 @@ fun LoginScreen(
     setGlobalBusy: (Boolean) -> Unit = {},
     vm: AuthViewModel = viewModel()
 ) {
-    var email by remember { mutableStateOf("alexisadmin@local.test") }
-    var pass by remember { mutableStateOf("qwerty") }
+
+    val rememberedEmail by vm.lastEmail.collectAsState()
+    val rememberedPref  by vm.rememberPref.collectAsState()
+
+    var email by rememberSaveable(rememberedEmail) { mutableStateOf(rememberedEmail.orEmpty()) }
+    var pass by rememberSaveable { mutableStateOf("") }
+    var rememberMe by rememberSaveable(rememberedPref) { mutableStateOf(rememberedPref) }
+
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showPass by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
 
-    val tryLogin: () -> Unit = remember(email, pass, loading) {
+    val tryLogin: () -> Unit = remember(email, pass, loading, rememberMe) {
         {
             if (!loading) {
                 focus.clearFocus()
                 loading = true; error = null
                 setGlobalBusy(true)
-                vm.login(email, pass) { ok ->
+                vm.login(email, pass, rememberMe) { ok ->
                     loading = false
-                    if (ok) {
-                        onLoggedIn()
-                    } else {
+                    if (ok) onLoggedIn() else {
                         error = "Credenciales inválidas"
                         setGlobalBusy(false)
                     }
@@ -132,8 +137,20 @@ fun LoginScreen(
                             }
                         },
                         keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { tryLogin() }) // <- PARAMETRO CORRECTO
+                        keyboardActions = KeyboardActions(onDone = { tryLogin() })
                     )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Recordarme")
+                        Spacer(Modifier.width(6.dp))
+                        Checkbox(checked = rememberMe, onCheckedChange = { rememberMe = it })
+                    }
 
                     if (error != null) {
                         Spacer(Modifier.height(8.dp))
