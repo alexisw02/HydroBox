@@ -1,22 +1,23 @@
 package com.hydrobox.app.ui.navigation
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,18 +42,40 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
     ) {
         Text(
             "Dispositivos Registrados",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
 
         items.forEach { name ->
             DeviceRowPill(
                 title = name,
-                onDetails = {}
+                onDetails = { /* ir a características */ }
             )
         }
 
         Spacer(Modifier.weight(1f))
+    }
+}
+
+/** Copiamos el mismo degradado aquí para evitar visibilidad privada entre archivos */
+@Composable
+private fun pillBackgroundBrush(cs: ColorScheme): Brush {
+    val isDark = cs.background.luminance() < 0.5f
+    return if (isDark) {
+        Brush.verticalGradient(
+            colors = listOf(
+                cs.primary.copy(alpha = 0.24f),
+                cs.primaryContainer.copy(alpha = 0.40f),
+                cs.surfaceVariant.copy(alpha = 0.18f)
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            colors = listOf(
+                cs.primaryContainer.copy(alpha = 0.70f),
+                cs.primary.copy(alpha = 0.30f),
+                cs.surface.copy(alpha = 0.55f)
+            )
+        )
     }
 }
 
@@ -62,17 +85,12 @@ private fun DeviceRowPill(
     onDetails: () -> Unit
 ) {
     val shape = RoundedCornerShape(28.dp)
-    val neon = MaterialTheme.colorScheme.primary
-
-    val bgBrush = Brush.verticalGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (MaterialTheme.colorScheme.isLight()) 0.35f else 0.20f),
-            MaterialTheme.colorScheme.primary.copy(alpha = if (MaterialTheme.colorScheme.isLight()) 0.10f else 0.08f)
-        )
-    )
+    val cs    = MaterialTheme.colorScheme
+    val neon  = cs.primary
+    val bg    = pillBackgroundBrush(cs)
 
     Surface(
-        color = Color.Transparent,          // lo pintamos con el Box interno
+        color = Color.Transparent,
         shape = shape,
         tonalElevation = 1.dp,
         border = BorderStroke(2.dp, SolidColor(neon)),
@@ -85,12 +103,12 @@ private fun DeviceRowPill(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(bgBrush, shape)
+                .background(bg, shape)
                 .border(
-                    BorderStroke(1.dp, SolidColor(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))),
+                    BorderStroke(1.dp, SolidColor(cs.onSurface.copy(alpha = 0.06f))),
                     shape
                 )
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 18.dp)
         ) {
             Row(
                 Modifier.fillMaxSize(),
@@ -105,8 +123,8 @@ private fun DeviceRowPill(
                     onClick = onDetails,
                     label = { Text("Características") },
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = cs.primaryContainer,
+                        labelColor = cs.onPrimaryContainer
                     ),
                     shape = RoundedCornerShape(9999.dp)
                 )
@@ -114,7 +132,3 @@ private fun DeviceRowPill(
         }
     }
 }
-
-@Composable
-private fun androidx.compose.material3.ColorScheme.isLight(): Boolean =
-    this.onBackground.alpha < 0.9f
