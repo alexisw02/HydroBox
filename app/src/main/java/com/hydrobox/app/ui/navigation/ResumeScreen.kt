@@ -1,6 +1,5 @@
 package com.hydrobox.app.ui.navigation
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -12,6 +11,7 @@ import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeviceThermostat
@@ -28,12 +28,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
 import com.hydrobox.app.ui.model.Crop
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -60,14 +60,12 @@ fun ResumeScreen(paddingValues: PaddingValues) {
                 valueText = "24.1 °C",
                 subtitle = "24° – 27°  |  26/2 21:23:04",
                 icon = { Icon(Icons.Filled.DeviceThermostat, contentDescription = null) },
-                percent = 0.65f
             ),
             SensorCardData(
                 title = "Humedad del aire",
                 valueText = "46.7 %",
                 subtitle = "Rango óptimo 45–60 %",
                 icon = { Icon(Icons.Filled.Opacity, contentDescription = null) },
-                percent = 0.47f
             ),
             SensorCardData(
                 title = "pH del agua",
@@ -103,43 +101,53 @@ fun ResumeScreen(paddingValues: PaddingValues) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DaysScroller(
     totalDays: Int,
     selectedDay: Int,
     onDaySelected: (Int) -> Unit
 ) {
+    if (totalDays <= 0) return
+
     val itemWidth = 56.dp
-    val spacing = 8.dp
-    val listState = rememberLazyListState()
+    val spacing   = 8.dp
 
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val screenWidthPx = with(density) { androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
-    val itemPx = with(density) { itemWidth.roundToPx() }
-    val spacingPx = with(density) { spacing.roundToPx() }
+    val startPad  = 0.dp
+    val endPad    = 0.dp            // <- clave: sin padding al final
 
-    val totalContentPx = totalDays * itemPx + (totalDays - 1) * spacingPx
-    val maxOffset = (totalContentPx - screenWidthPx).coerceAtLeast(0)
+    val state        = rememberLazyListState()
+    val snapBehavior = rememberSnapFlingBehavior(lazyListState = state)
+    val scope        = rememberCoroutineScope()
 
-    LaunchedEffect(selectedDay, totalDays) {
-        val i = (selectedDay - 1).coerceIn(0, totalDays - 1)
-        val centerOffset = (i * (itemPx + spacingPx)) - (screenWidthPx - itemPx) / 2
-        val targetOffset = centerOffset.coerceIn(0, maxOffset)
+    val targetIndex = (selectedDay - 1).coerceIn(0, totalDays - 1)
 
-        listState.animateScrollToItem(index = 0, scrollOffset = targetOffset)
+    LaunchedEffect(totalDays) {
+        state.scrollToItem(targetIndex)
+    }
+
+    LaunchedEffect(targetIndex, totalDays) {
+        // si ya está visible y “pegado” al inicio, no re-animamos
+        val near = state.layoutInfo.visibleItemsInfo
+            .any { it.index == targetIndex && it.offset == 0 }
+        if (!near) state.animateScrollToItem(targetIndex)
     }
 
     LazyRow(
-        state = listState,
+        state = state,
         horizontalArrangement = Arrangement.spacedBy(spacing),
+        contentPadding = PaddingValues(start = startPad, end = endPad),
+        flingBehavior = snapBehavior,
         modifier = Modifier.fillMaxWidth()
     ) {
-        items(totalDays) { index ->
+        items(count = totalDays, key = { it }) { index ->
             val day = index + 1
-            val selected = day == selectedDay
             FilterChip(
-                selected = selected,
-                onClick = { onDaySelected(day) },
+                selected = day == selectedDay,
+                onClick = {
+                    onDaySelected(day)
+                    scope.launch { state.animateScrollToItem(index) }
+                },
                 label = { Text(day.toString()) },
                 modifier = Modifier.width(itemWidth)
             )
@@ -252,66 +260,56 @@ private fun SensorsCarousel(cards: List<SensorCardData>) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val peek = 28.dp
-                val pageWidth = maxWidth - peek * 2
+                val peek = 20.dp
+                val pageSpacing = 8.dp
                 val pagerState = rememberPagerState(pageCount = { cards.size })
+                val last = cards.lastIndex
+                val current by remember { derivedStateOf { pagerState.currentPage } }
 
-                Column {
-                    HorizontalPager(
-                        state = pagerState,
-                        pageSpacing = 12.dp,
-                        contentPadding = PaddingValues(horizontal = peek),
-                        pageSize = PageSize.Fixed(pageWidth)
-                    ) { page ->
-                        val pageOffset = ((pagerState.currentPage - page) +
-                                pagerState.currentPageOffsetFraction).absoluteValue
+                val baseWidth = maxWidth - peek * 2
 
-                        val t = 1f - pageOffset.coerceIn(0f, 1f)
-                        val scale = 0.96f + 0.04f * t
-                        val alpha = 0.85f + 0.15f * t
+                val startPad = if (current == 0) 0.dp else peek
+                val endPad   = if (current == last) 0.dp else peek
 
-                        SensorCard(
-                            data = cards[page],
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                    this.alpha = alpha
-                                }
-                        )
-                    }
+                HorizontalPager(
+                    state = pagerState,
+                    pageSpacing = pageSpacing,
+                    contentPadding = PaddingValues(start = startPad, end = endPad),
+                    pageSize = PageSize.Fixed(baseWidth)
+                ) { page ->
+                    val pageOffset = ((pagerState.currentPage - page) +
+                            pagerState.currentPageOffsetFraction).absoluteValue
+                    val t = 1f - pageOffset.coerceIn(0f, 1f)
+                    val scale = 0.96f + 0.04f * t
+                    val alpha = 0.85f + 0.15f * t
 
-                    Row(
-                        Modifier
+                    SensorCard(
+                        data = cards[page],
+                        modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        val current by remember { derivedStateOf { pagerState.currentPage } }
-                        repeat(cards.size) { index ->
-                            val selected = current == index
-                            Box(
-                                Modifier
-                                    .padding(4.dp)
-                                    .size(if (selected) 10.dp else 8.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                    )
-                            )
-                        }
-                    }
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                this.alpha = alpha
+                            }
+                    )
                 }
+
+                Column(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 0.dp)
+                ) { }
             }
 
-            Text(
-                "Desliza para ver más",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                val pagerState = rememberPagerState(pageCount = { cards.size })
+            }
         }
     }
 }
@@ -321,37 +319,52 @@ private fun SensorCard(
     data: SensorCardData,
     modifier: Modifier = Modifier
 ) {
+    val meterHeight = 6.dp
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         shape = RoundedCornerShape(16.dp),
         tonalElevation = 1.dp,
-        modifier = modifier
-            .heightIn(min = 150.dp)
+        modifier = modifier.requiredHeight(140.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 data.icon()
                 Spacer(Modifier.width(8.dp))
-                Text(data.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    data.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
             }
-            Text(data.valueText, style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black))
+            Text(
+                data.valueText,
+                style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black),
+                maxLines = 1
+            )
             Text(
                 data.subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
             )
-            data.percent?.let { p ->
-                Spacer(Modifier.height(8.dp))
+
+            Spacer(Modifier.height(6.dp))
+
+            if (data.percent != null) {
                 LinearProgressIndicator(
-                    progress = { p.coerceIn(0f, 1f) },
+                    progress = { data.percent.coerceIn(0f, 1f) },
                     trackColor = MaterialTheme.colorScheme.surface,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
+                        .height(meterHeight)
                         .clip(RoundedCornerShape(6.dp))
                 )
-                Text("${(p * 100).roundToInt()} %", style = MaterialTheme.typography.labelMedium)
+                Text("${(data.percent * 100).roundToInt()} %", style = MaterialTheme.typography.labelMedium)
+            } else {
+                Box(Modifier.fillMaxWidth().height(meterHeight))
             }
         }
     }
