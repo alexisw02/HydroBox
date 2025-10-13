@@ -1,6 +1,7 @@
 package com.hydrobox.app.ui.navigation
 
 import android.net.Uri
+import android.content.Intent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import com.hydrobox.app.ui.components.HydroTopBar
@@ -85,6 +86,15 @@ private fun MainScaffold(
         )
     }
 
+    val context = LocalContext.current
+    val openExternal: (String) -> Unit = { url ->
+        scope.launch { drawerState.close() }
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = isInRootTabs,
@@ -102,6 +112,7 @@ private fun MainScaffold(
                     onAccount      = { scope.launch { drawerState.close() }; nav.navigate(Route.Account.path) },
                     onSettings     = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
                     onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
+                    onOpenHydrobox  = { openExternal("https://hydrobox.pi.jademajesty.com/") },
                     onLogout       = { scope.launch { drawerState.close() }; showLogoutDialog = true }
                 )
             }
@@ -292,6 +303,7 @@ private fun DrawerContent(
     onAccount: () -> Unit,
     onSettings: () -> Unit,
     onNotification: () -> Unit,
+    onOpenHydrobox: () -> Unit,
     onLogout: () -> Unit
 ) {
     NavigationDrawerItem(
@@ -336,6 +348,22 @@ private fun DrawerContent(
         ),
         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
     )
+
+    NavigationDrawerItem(
+        label = { Text("HydroBox Web") },
+        selected = false,
+        onClick = onOpenHydrobox,
+        icon = { Icon(Icons.Outlined.Public, contentDescription = null) }, // o Icons.Outlined.OpenInNew
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
+
     NavigationDrawerItem(
         label = { Text("Cerrar sesión") },
         selected = false,
