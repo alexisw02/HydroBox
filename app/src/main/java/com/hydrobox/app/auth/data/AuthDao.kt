@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.*
 
 @Dao
 interface AuthDao {
-    @Query("SELECT * FROM users_local WHERE email = :email LIMIT 1")
+
+    @Query("SELECT * FROM users_local WHERE email = :email COLLATE NOCASE LIMIT 1")
     suspend fun findByEmail(email: String): UserEntity?
 
     @Query("SELECT * FROM users_local WHERE id = :id LIMIT 1")
@@ -16,4 +17,10 @@ interface AuthDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(vararg users: UserEntity)
+
+    @Query("SELECT * FROM users_local WHERE id = :id LIMIT 1")
+    suspend fun findById(id: Long): UserEntity?
+
+    @androidx.room.Update
+    suspend fun update(user: UserEntity)
 }

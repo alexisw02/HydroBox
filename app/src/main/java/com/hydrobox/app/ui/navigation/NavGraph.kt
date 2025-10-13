@@ -6,14 +6,17 @@ import androidx.compose.foundation.layout.*
 import com.hydrobox.app.ui.components.HydroTopBar
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.animation.Crossfade
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
+import coil.request.CachePolicy
+import java.io.File
+import com.hydrobox.app.R
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -42,13 +45,6 @@ sealed class Route(val path: String) {
 
 data class BottomItem(val route: Route, val label: String, val icon: ImageVector)
 
-data class AdminUser(
-    val name: String,
-    val lastName: String,
-    val role: String,
-    val email: String
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScaffold(
@@ -63,16 +59,11 @@ private fun MainScaffold(
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     val user = authVM.currentUser.collectAsState().value
-    val admin = remember(user) {
-        AdminUser(
-            name     = user?.name.orEmpty().ifBlank { "Hydro" },
-            lastName = user?.lastName.orEmpty().ifBlank { "Admin" },
-            role     = "Administrador",
-            email    = user?.email ?: "admin@hydrobox.local"
-        )
+
+    val adminName = remember(user?.name, user?.lastName) {
+        "${user?.name.orEmpty()} ${user?.lastName.orEmpty()}".trim().ifBlank { "Hydro Admin" }
     }
-    var adminName by remember(admin) { mutableStateOf("${admin.name} ${admin.lastName}".trim()) }
-    var avatarUri by remember { mutableStateOf<Uri?>(null) }
+    val avatarUri: Uri? = user?.avatarUri?.let(Uri::parse)
 
     val isInRootTabs = current.isInHierarchyOf(
         Route.Resume.path, Route.Sensors.path, Route.Actuators.path, Route.History.path, Route.Crops.path
@@ -108,13 +99,6 @@ private fun MainScaffold(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 DrawerContent(
-                    onResume = {
-                        scope.launch { drawerState.close() }
-                        nav.navigate(Route.Resume.path) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true; restoreState = true
-                        }
-                    },
                     onAccount      = { scope.launch { drawerState.close() }; nav.navigate(Route.Account.path) },
                     onSettings     = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
                     onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
@@ -179,7 +163,7 @@ private fun MainScaffold(
                 composable(Route.Actuators.path) { ActuatorsScreen(paddingValues = PaddingValues()) }
                 composable(Route.History.path)   { HistoryScreen(paddingValues = PaddingValues()) }
                 composable(Route.Crops.path)     { CropsScreen(paddingValues = PaddingValues()) }
-                composable(Route.Account.path)   { AccountScreen(user = admin) }
+                composable(Route.Account.path)   { AccountScreen(vm = authVM) }
                 composable(Route.Settings.path)  { SettingsScreen() }
                 composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }
             }
@@ -264,25 +248,36 @@ private fun DrawerHeader(
     avatarUri: Uri?,
     onAccount: () -> Unit
 ) {
+    val context = LocalContext.current
+
+    val version: Long = if (avatarUri?.scheme?.equals("file", ignoreCase = true) == true) {
+        try {
+            avatarUri.path?.let { File(it).lastModified() } ?: 0L
+        } catch (_: Throwable) { 0L }
+    } else 0L
+
+    val req = ImageRequest.Builder(context)
+        .data(avatarUri)
+        .setParameter("version", version)
+        .memoryCacheKey("avatar_${avatarUri?.path.orEmpty()}_$version")
+        .diskCacheKey("avatar_${avatarUri?.path.orEmpty()}_$version")
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .error(R.drawable.ic_avatar_placeholder)
+        .fallback(R.drawable.ic_avatar_placeholder)
+        .build()
+
+    val painter = rememberAsyncImagePainter(model = req)
+
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
+        Modifier.fillMaxWidth().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (avatarUri != null) {
-            Image(
-                painter = rememberAsyncImagePainter(avatarUri),
-                contentDescription = "Foto de perfil",
-                modifier = Modifier.size(56.dp).clip(CircleShape)
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Outlined.AccountCircle,
-                contentDescription = "Perfil",
-                modifier = Modifier.size(56.dp)
-            )
-        }
+        Image(
+            painter = painter,
+            contentDescription = "Foto de perfil",
+            modifier = Modifier.size(56.dp).clip(CircleShape)
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("Administrador", style = MaterialTheme.typography.labelMedium)
@@ -294,26 +289,11 @@ private fun DrawerHeader(
 
 @Composable
 private fun DrawerContent(
-    onResume: () -> Unit,
     onAccount: () -> Unit,
     onSettings: () -> Unit,
     onNotification: () -> Unit,
     onLogout: () -> Unit
 ) {
-    NavigationDrawerItem(
-        label = { Text("Resumen") },
-        selected = false,
-        onClick = onResume,
-        icon = { Icon(Icons.Filled.Dashboard, null) },
-        colors = NavigationDrawerItemDefaults.colors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurface
-        ),
-        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-    )
     NavigationDrawerItem(
         label = { Text("Cuenta") },
         selected = false,

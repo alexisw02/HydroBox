@@ -5,9 +5,14 @@ import androidx.lifecycle.*
 import com.hydrobox.app.auth.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.*
+import android.net.Uri
+import androidx.core.net.toUri
+import android.util.Log
+import java.io.File
+import java.io.FileOutputStream
 
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
-    private val db = AppDatabase.get(app, viewModelScope)
+    private val db = AppDatabase.get(app)
     private val repo = AuthRepository(db.authDao(), AuthStore(app))
 
     val authState = repo.authState
@@ -16,7 +21,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     val currentUser = repo.currentUser
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
-    // Para el LoginScreen:
     val lastEmail = repo.lastEmail
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
     val rememberPref = repo.rememberPref
@@ -36,6 +40,57 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = withContext(Dispatchers.IO) { repo.login(email, pass, remember) }
             onResult(ok)
+        }
+    }
+
+    private fun persistAvatarIfNeeded(source: String?): String? {
+        if (source.isNullOrBlank()) return null
+        val uri = source.toUri()
+        if (uri.scheme.equals("file", true)) return source
+
+        return try {
+            val ctx = getApplication<Application>()
+            val inStream = ctx.contentResolver.openInputStream(uri) ?: return null
+            val dir = File(ctx.filesDir, "avatars").apply { mkdirs() }
+
+            val uid = authState.value.userId ?: System.currentTimeMillis()
+            val outFile = File(dir, "avatar_$uid.jpg")
+
+            FileOutputStream(outFile).use { out ->
+                inStream.use { inp -> inp.copyTo(out) }
+            }
+            Uri.fromFile(outFile).toString()
+        } catch (e: Throwable) {
+            Log.w("AuthVM", "persistAvatarIfNeeded failed", e)   // ← usa el parámetro
+            null
+        }
+    }
+
+    fun updateProfile(
+        name: String,
+        lastName: String,
+        email: String,
+        newPasswordPlain: String?,
+        avatarUri: String?,
+        phonePrefix: String?,
+        phone: String?,
+        onDone: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = authState.value.userId ?: return@launch
+            val persisted = persistAvatarIfNeeded(avatarUri)
+
+            repo.updateProfile(
+                userId = id,
+                name = name,
+                lastName = lastName,
+                email = email,
+                newPasswordPlain = newPasswordPlain,
+                avatarUri = persisted ?: avatarUri,
+                phonePrefix = phonePrefix,
+                phone = phone
+            )
+            withContext(Dispatchers.Main) { onDone() }
         }
     }
 

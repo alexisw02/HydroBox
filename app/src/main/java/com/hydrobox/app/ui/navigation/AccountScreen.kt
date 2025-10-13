@@ -1,6 +1,8 @@
 package com.hydrobox.app.ui.navigation
 
 import android.net.Uri
+import androidx.compose.ui.res.painterResource
+import com.hydrobox.app.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,41 +29,46 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 @Composable
 fun AccountScreen(
-    user: AdminUser,
-    onSave: (updated: AdminUser, photo: Uri?, username: String, phonePrefix: String, phone: String) -> Unit = { _, _, _, _, _ -> }
+    vm: com.hydrobox.app.auth.AuthViewModel
 ) {
-    // Foto
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    val user = vm.currentUser.collectAsState().value
+    if (user == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    var photoUri by remember(user.avatarUri) { mutableStateOf(user.avatarUri?.let(Uri::parse)) }
     val pickMedia = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) photoUri = uri }
 
-    // Estados de UI
-    var name by remember { mutableStateOf("${user.name} ${user.lastName}".trim()) }
-    var email by remember { mutableStateOf(user.email) }
-    var username by remember { mutableStateOf("") }
-    var phonePrefix by remember { mutableStateOf("+52") }
-    var phone by remember { mutableStateOf("") }
+    var nameFull by remember(user) { mutableStateOf("${user.name} ${user.lastName}".trim()) }
+    var email by remember(user) { mutableStateOf(user.email) }
+    var phonePrefix by remember(user) { mutableStateOf(user.phonePrefix ?: "+52") }
+    var phone by remember(user) { mutableStateOf(user.phone ?: "") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
-    // Validaciones
     val emailOk = remember(email) { email.isNotBlank() && android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() }
     val passOk = remember(password) { password.isEmpty() || password.length >= 8 }
     val phoneOk = remember(phone) { phone.isEmpty() || phone.all(Char::isDigit) }
 
-    val hasChanges = remember(name, email, username, phonePrefix, phone, password, photoUri) {
-        name.isNotBlank() &&
-                (name != "${user.name} ${user.lastName}".trim() ||
+    val hasChanges = remember(nameFull, email, phonePrefix, phone, password, photoUri) {
+        val baseFull = "${user.name} ${user.lastName}".trim()
+        nameFull.isNotBlank() && (
+                nameFull != baseFull ||
                         email != user.email ||
-                        username.isNotBlank() ||
-                        phonePrefix != "+52" ||
-                        phone.isNotBlank() ||
+                        phonePrefix != (user.phonePrefix ?: "+52") ||
+                        phone != (user.phone ?: "") ||
                         password.isNotEmpty() ||
-                        photoUri != null)
+                        (photoUri?.toString() ?: "") != (user.avatarUri ?: "")
+                )
     }
 
     val tfColors = TextFieldDefaults.colors(
@@ -74,145 +81,169 @@ fun AccountScreen(
         cursorColor             = MaterialTheme.colorScheme.primary
     )
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Avatar + botón cámara
-        Box(contentAlignment = Alignment.BottomEnd) {
-            if (photoUri != null) {
-                AsyncImage(
-                    model = photoUri,
-                    contentDescription = "Foto de perfil",
-                    modifier = Modifier.size(96.dp).clip(CircleShape)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Outlined.AccountCircle,
-                    contentDescription = "Foto de perfil",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(96.dp).clip(CircleShape)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    if (photoUri != null) {
+        AsyncImage(
+            model = photoUri,
+            contentDescription = "Foto de perfil",
+            modifier = Modifier.size(96.dp).clip(CircleShape),
+            error = painterResource(R.drawable.ic_avatar_placeholder),
+            fallback = painterResource(R.drawable.ic_avatar_placeholder)
+        )
+    } else {
+        Icon(
+            imageVector = Icons.Outlined.AccountCircle,
+            contentDescription = "Foto de perfil",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(96.dp).clip(CircleShape)
+        )
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { inner ->
+        Column(
+            Modifier
+                .padding(inner)
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(contentAlignment = Alignment.BottomEnd) {
+                if (photoUri != null) {
+                    AsyncImage(
+                        model = photoUri,
+                        contentDescription = "Foto de perfil",
+                        modifier = Modifier.size(96.dp).clip(CircleShape)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.AccountCircle,
+                        contentDescription = "Foto de perfil",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(96.dp).clip(CircleShape)
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = {
+                        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    modifier = Modifier
+                        .offset(x = 4.dp, y = 4.dp)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                ) { Icon(Icons.Outlined.CameraAlt, contentDescription = "Cambiar foto") }
+            }
+
+            LabeledField("Nombre y apellido") {
+                TextField(
+                    value = nameFull,
+                    onValueChange = { nameFull = it },
+                    placeholder = { Text("Alexis Verduzco") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = tfColors
                 )
             }
-            FilledTonalIconButton(
+
+            LabeledField("E-mail") {
+                TextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    placeholder = { Text("tucorreo@ejemplo.com") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    isError = !emailOk,
+                    supportingText = { if (!emailOk) Text("Email no válido", color = MaterialTheme.colorScheme.error) },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = tfColors
+                )
+            }
+
+            LabeledField("Contraseña (opcional)") {
+                TextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    placeholder = { Text("********") },
+                    singleLine = true,
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Icon(
+                                if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (showPassword) "Ocultar" else "Mostrar"
+                            )
+                        }
+                    },
+                    isError = !passOk,
+                    supportingText = { if (!passOk) Text("Mínimo 8 caracteres", color = MaterialTheme.colorScheme.error) },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = tfColors
+                )
+            }
+
+            LabeledField("Teléfono") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextField(
+                        value = phonePrefix,
+                        onValueChange = { if (it.length <= 5) phonePrefix = it },
+                        singleLine = true,
+                        modifier = Modifier.width(90.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = tfColors
+                    )
+                    TextField(
+                        value = phone,
+                        onValueChange = { phone = it.filter(Char::isDigit) },
+                        placeholder = { Text("6895312") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        isError = !phoneOk,
+                        supportingText = { if (!phoneOk) Text("Solo dígitos", color = MaterialTheme.colorScheme.error) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = tfColors
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Button(
                 onClick = {
-                    pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                },
-                modifier = Modifier.offset(x = 4.dp, y = 4.dp).size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface)
-            ) { Icon(Icons.Outlined.CameraAlt, contentDescription = "Cambiar foto") }
-        }
-
-        // Campos
-        LabeledField("Name") {
-            TextField(
-                value = name,
-                onValueChange = { name = it },
-                placeholder = { Text("Charlotte King") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors
-            )
-        }
-
-        LabeledField("E-mail address") {
-            TextField(
-                value = email,
-                onValueChange = { email = it },
-                placeholder = { Text("defaultemail@gmail.com") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                isError = !emailOk,
-                supportingText = { if (!emailOk) Text("Email no válido", color = MaterialTheme.colorScheme.error) },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors
-            )
-        }
-
-        LabeledField("User name") {
-            TextField(
-                value = username,
-                onValueChange = { username = it },
-                placeholder = { Text("@defaultamerandom") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors
-            )
-        }
-
-        LabeledField("Password") {
-            TextField(
-                value = password,
-                onValueChange = { password = it },
-                placeholder = { Text("********") },
-                singleLine = true,
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showPassword = !showPassword }) {
-                        Icon(
-                            if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = if (showPassword) "Ocultar" else "Mostrar"
-                        )
+                    val parts = nameFull.trim().split(" ", limit = 2)
+                    val n = parts.getOrNull(0).orEmpty()
+                    val l = parts.getOrNull(1).orEmpty()
+                    vm.updateProfile(
+                        name = n,
+                        lastName = l,
+                        email = email,
+                        newPasswordPlain = password.ifBlank { null },
+                        avatarUri = photoUri?.toString(),
+                        phonePrefix = phonePrefix,
+                        phone = phone
+                    ) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Cambios guardados")
+                        }
                     }
                 },
-                isError = !passOk,
-                supportingText = { if (!passOk) Text("Mínimo 8 caracteres", color = MaterialTheme.colorScheme.error) },
+                enabled = hasChanges && emailOk && passOk && phoneOk,
                 shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors
-            )
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) { Text("Guardar cambios") }
+
+            Text("Rol: Administrador", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
         }
-
-        LabeledField("Phone number") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextField(
-                    value = phonePrefix,
-                    onValueChange = { if (it.length <= 4) phonePrefix = it },
-                    singleLine = true,
-                    modifier = Modifier.width(90.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = tfColors
-                )
-                TextField(
-                    value = phone,
-                    onValueChange = { phone = it.filter(Char::isDigit) },
-                    placeholder = { Text("6895312") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    isError = !phoneOk,
-                    supportingText = { if (!phoneOk) Text("Solo dígitos", color = MaterialTheme.colorScheme.error) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = tfColors
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Button(
-            onClick = {
-                val parts = name.trim().split(" ", limit = 2)
-                val updated = user.copy(
-                    name = parts.getOrNull(0).orEmpty(),
-                    lastName = parts.getOrNull(1).orEmpty(),
-                    email = email
-                )
-                onSave(updated, photoUri, username, phonePrefix, phone)
-            },
-            enabled = hasChanges && emailOk && passOk && phoneOk,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().height(48.dp)
-        ) { Text("Guardar cambios") }
-
-        Text("Rol: ${user.role}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
     }
 }
 
