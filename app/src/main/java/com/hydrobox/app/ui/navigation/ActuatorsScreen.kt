@@ -51,7 +51,6 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
     }
 }
 
-/** Reutilizamos el mismo componente pill con borde neón */
 @Composable
 private fun DeviceRowPill(
     title: String,

@@ -50,7 +50,6 @@ fun SensorsScreen(paddingValues: PaddingValues) {
     }
 }
 
-/** Fila tipo “pill” a lo ancho, con borde tipo neón y botón a la derecha */
 @Composable
 private fun DeviceRowPill(
     title: String,

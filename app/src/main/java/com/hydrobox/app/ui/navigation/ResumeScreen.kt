@@ -114,7 +114,7 @@ private fun DaysScroller(
     val spacing   = 8.dp
 
     val startPad  = 0.dp
-    val endPad    = 0.dp            // <- clave: sin padding al final
+    val endPad    = 0.dp
 
     val state        = rememberLazyListState()
     val snapBehavior = rememberSnapFlingBehavior(lazyListState = state)
@@ -127,7 +127,6 @@ private fun DaysScroller(
     }
 
     LaunchedEffect(targetIndex, totalDays) {
-        // si ya está visible y “pegado” al inicio, no re-animamos
         val near = state.layoutInfo.visibleItemsInfo
             .any { it.index == targetIndex && it.offset == 0 }
         if (!near) state.animateScrollToItem(targetIndex)

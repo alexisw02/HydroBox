@@ -353,7 +353,7 @@ private fun DrawerContent(
         label = { Text("HydroBox Web") },
         selected = false,
         onClick = onOpenHydrobox,
-        icon = { Icon(Icons.Outlined.Public, contentDescription = null) }, // o Icons.Outlined.OpenInNew
+        icon = { Icon(Icons.Outlined.Public, contentDescription = null) },
         colors = NavigationDrawerItemDefaults.colors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
