@@ -7,25 +7,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+
 import com.hydrobox.app.ui.navigation.HydroNavRoot
 import com.hydrobox.app.ui.theme.HydroBoxTheme
+import com.hydrobox.app.ui.theme.LocalDarkThemeState
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            HydroBoxTheme(
-                darkTheme = true,
-                dynamicColor = false
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+            val darkState = rememberSaveable { mutableStateOf(true) }
+
+            CompositionLocalProvider(LocalDarkThemeState provides darkState) {
+                HydroBoxTheme(
+                    darkTheme = darkState.value,
+                    dynamicColor = false
                 ) {
-                    HydroNavRoot()
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        HydroNavRoot()
+                    }
                 }
             }
         }
     }
 }
-

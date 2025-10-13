@@ -1,6 +1,5 @@
 package com.hydrobox.app.ui.navigation
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -11,6 +10,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +48,7 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
         items.forEach { name ->
             DeviceRowPill(
                 title = name,
-                onDetails = { /* TODO: ir a características/controles del actuador */ }
+                onDetails = {}
             )
         }
 
@@ -57,40 +62,59 @@ private fun DeviceRowPill(
     onDetails: () -> Unit
 ) {
     val shape = RoundedCornerShape(28.dp)
-    val neon      = MaterialTheme.colorScheme.primary
-    val container = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+    val neon = MaterialTheme.colorScheme.primary
+
+    val bgBrush = Brush.verticalGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (MaterialTheme.colorScheme.isLight()) 0.35f else 0.20f),
+            MaterialTheme.colorScheme.primary.copy(alpha = if (MaterialTheme.colorScheme.isLight()) 0.10f else 0.08f)
+        )
+    )
 
     Surface(
-        color = container,
+        color = Color.Transparent,          // lo pintamos con el Box interno
         shape = shape,
         tonalElevation = 1.dp,
-        border = BorderStroke(width = 2.dp, brush = SolidColor(neon)),
+        border = BorderStroke(2.dp, SolidColor(neon)),
         modifier = Modifier
             .fillMaxWidth()
             .height(64.dp)
             .clip(shape)
             .shadow(elevation = 2.dp, shape = shape)
     ) {
-        Row(
+        Box(
             Modifier
                 .fillMaxSize()
+                .background(bgBrush, shape)
+                .border(
+                    BorderStroke(1.dp, SolidColor(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))),
+                    shape
+                )
                 .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            AssistChip(
-                onClick = onDetails,
-                label = { Text("Características") },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                shape = RoundedCornerShape(9999.dp)
-            )
+            Row(
+                Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                AssistChip(
+                    onClick = onDetails,
+                    label = { Text("Características") },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    shape = RoundedCornerShape(9999.dp)
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun androidx.compose.material3.ColorScheme.isLight(): Boolean =
+    this.onBackground.alpha < 0.9f
