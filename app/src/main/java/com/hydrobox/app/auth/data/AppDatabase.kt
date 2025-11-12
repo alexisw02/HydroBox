@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                                 INSERT INTO users_local 
                                     (name, lastName, email, passwordPlain, avatarUri, phonePrefix, phone)
                                 VALUES 
-                                    ('Usuario,'Administrador','example@gmail.com','qwerty',NULL,NULL,NULL)
+                                    ('Usuario','Administrador','example@gmail.com','qwerty',NULL,NULL,NULL)
                             """.trimIndent())
                         }
                     })

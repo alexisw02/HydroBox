@@ -40,7 +40,7 @@ fun SensorsScreen(paddingValues: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            "Dispositivos Registrados",
+            "Sensores Registrados",
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
 

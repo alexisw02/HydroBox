@@ -41,7 +41,7 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            "Dispositivos Registrados",
+            "Actuadores Registrados",
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
 
