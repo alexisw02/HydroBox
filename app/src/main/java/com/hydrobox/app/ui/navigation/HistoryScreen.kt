@@ -1,18 +1,36 @@
 package com.hydrobox.app.ui.navigation
 
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.geometry.CornerRadius
+import java.util.Locale
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
+import android.graphics.Paint
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hydrobox.app.ui.components.HydroCard
@@ -20,6 +38,9 @@ import com.hydrobox.app.ui.components.SegmentedChip
 import com.hydrobox.app.ui.components.SegmentedVariant
 import com.hydrobox.app.ui.theme.BrandPrimary
 import com.hydrobox.app.ui.theme.Error
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
@@ -28,6 +49,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 fun HistoryScreen(paddingValues: PaddingValues) {
     var range by remember { mutableStateOf(TimeRange.Last7d) }
     var metric by remember { mutableStateOf(Metric.PH) }
+
+    // Serie demo (coherente con rango/metric)
+    val series by remember(range, metric) { mutableStateOf(generateDemoSeries(range, metric)) }
+    val optimum by remember(metric) { mutableStateOf(optimumRange(metric)) }
 
     Column(
         Modifier
@@ -47,13 +72,13 @@ fun HistoryScreen(paddingValues: PaddingValues) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // Rango
+        // ===================== Filtros =====================
         SectionTitle("Rango")
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 2.dp)
         ) {
-            items(TimeRange.values()) { item ->
+            items(TimeRange.entries.toList()) { item ->
                 SegmentedChip(
                     text = item.label,
                     selected = item == range,
@@ -63,14 +88,13 @@ fun HistoryScreen(paddingValues: PaddingValues) {
             }
         }
 
-        // Métrica
         SectionTitle("Métrica")
         FlowRow(
             maxItemsInEachRow = 3,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Metric.values().forEach { m ->
+            Metric.entries.forEach { m ->
                 SegmentedChip(
                     text = m.label,
                     selected = m == metric,
@@ -80,45 +104,65 @@ fun HistoryScreen(paddingValues: PaddingValues) {
             }
         }
 
-        // Tendencia
         HydroCard(
             title = "Tendencia",
             subtitle = "${metric.label} — ${range.label}",
             modifier = Modifier.fillMaxWidth()
         ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
-                    .clip(RoundedCornerShape(16.dp))
-            ) {
-                TrendPlaceholder()
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                // NUEVO: etiquetas para ejes
+                val currentMetric = metric
+                val yAxisLabel = currentMetric.label           // “pH”, “Temp Agua”, etc.
+                val xLabels = remember(range, series) {
+                    // Por ahora, índices 0..N (cuando tengas fechas, cámbialo aquí)
+                    List(series.size) { i -> i.toString() }
+                }
+
+                TrendChart(
+                    series   = series,
+                    optimum  = optimum,
+                    lineColor = BrandPrimary,
+                    xLabels  = xLabels,     // ← nuevo
+                    yLabel   = yAxisLabel,  // ← nuevo
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+
+                // Se queda igual
+                StatsRow(series = series, metric = metric)
             }
         }
 
-        // Eventos
+        // ===================== Eventos =====================
         HydroCard(
             title = "Eventos",
             subtitle = "Alarmas, cambios de actuadores y calibraciones",
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                HistoryEventRow(
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                TimelineEventRow(
+                    icon = Icons.Filled.Bolt,
                     title = "Bomba de agua — ON",
                     subtitle = "Programado | 10:00",
                     accent = BrandPrimary
                 )
-                HistoryEventRow(
+                TimelineEventRow(
+                    icon = Icons.Filled.Science,
                     title = "pH fuera de rango",
                     subtitle = "Lectura = 5.5 | Óptimo: 5.8–6.2",
                     accent = Error
                 )
-                HistoryEventRow(
+                TimelineEventRow(
+                    icon = Icons.Filled.Speed,
                     title = "Extractor — OFF",
                     subtitle = "Manual | 12:43",
                     accent = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                HistoryEventRow(
+                TimelineEventRow(
+                    icon = Icons.Filled.WaterDrop,
                     title = "Dosificación Micro — 8 ml",
                     subtitle = "Rutina semanal | 10:02",
                     accent = BrandPrimary
@@ -127,6 +171,8 @@ fun HistoryScreen(paddingValues: PaddingValues) {
         }
     }
 }
+
+/* ===================== UI helpers ===================== */
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -138,26 +184,72 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun HistoryEventRow(
+private fun StatsRow(series: List<Float>, metric: Metric) {
+    val minV = series.minOrNull() ?: 0f
+    val maxV = series.maxOrNull() ?: 0f
+    val avgV = if (series.isNotEmpty()) series.average().toFloat() else 0f
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        StatPill("Mín", formatValue(metric, minV))
+        StatPill("Prom", formatValue(metric, avgV))
+        StatPill("Máx", formatValue(metric, maxV))
+    }
+}
+
+@Composable
+private fun StatPill(label: String, value: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f),
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(6.dp))
+            Text(value, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+        }
+    }
+}
+
+@Composable
+private fun TimelineEventRow(
+    icon: ImageVector,
     title: String,
     subtitle: String,
-    accent: androidx.compose.ui.graphics.Color
+    accent: Color
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)),
+        Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // barra de acento a la izquierda
-        Box(
-            Modifier
-                .width(6.dp)
-                .height(40.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(accent)
-        )
-        Column(Modifier.padding(start = 12.dp)) {
+        // Línea vertical + punto
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .height(6.dp)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .25f))
+            )
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = .15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = accent, modifier = Modifier.size(14.dp))
+            }
+            Box(
+                Modifier
+                    .width(2.dp)
+                    .height(24.dp)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .25f))
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
             Text(
                 title,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -173,43 +265,215 @@ private fun HistoryEventRow(
     }
 }
 
-@Composable
-private fun TrendPlaceholder() {
-    val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.18f)
-    val lineColor = BrandPrimary
+/* ===================== Chart ===================== */
 
-    Canvas(Modifier.fillMaxSize().padding(12.dp)) {
-        val stepY = size.height / 4f
-        val stepX = size.width / 6f
-        // Rejilla
-        for (i in 1..3) {
-            val y = stepY * i
-            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+@Composable
+private fun TrendChart(
+    series: List<Float>,
+    optimum: ClosedFloatingPointRange<Float>?,
+    lineColor: Color,
+    xLabels: List<String> = emptyList(),
+    yLabel: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val progress by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(durationMillis = 850),
+        label = "reveal"
+    )
+
+    // Colores/medidas fuera del Canvas
+    val axisColor   = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f)
+    val gridColor   = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .15f)
+    val textColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = .9f).toArgb()
+    val density     = LocalDensity.current
+    val fontPxSmall = with(density) { 11.sp.toPx() }
+    val fontPxAxis  = with(density) { 12.sp.toPx() }
+
+    // Paints nativos para texto
+    val labelPaint = remember(textColor, fontPxSmall) {
+        Paint().apply { isAntiAlias = true; color = textColor; textSize = fontPxSmall }
+    }
+    val axisPaint = remember(textColor, fontPxAxis) {
+        Paint().apply { isAntiAlias = true; color = textColor; textSize = fontPxAxis }
+    }
+
+    Canvas(modifier.padding(12.dp)) {
+        if (series.size < 2) return@Canvas
+
+        // Márgenes internos
+        val leftPad   = 32.dp.toPx()  // más espacio para etiquetas Y
+        val rightPad  = 10.dp.toPx()
+        val topPad    = 8.dp.toPx()
+        val bottomPad = 24.dp.toPx()  // espacio para etiquetas X
+
+        val w = size.width  - leftPad - rightPad
+        val h = size.height - topPad  - bottomPad
+
+        // Escala
+        val sMin = series.minOrNull()!!
+        val sMax = series.maxOrNull()!!
+        val yMin = min(optimum?.start ?: sMin, sMin)
+        val yMax = max(optimum?.endInclusive ?: sMax, sMax)
+        val ySpan = (yMax - yMin).takeIf { it > 0f } ?: 1f
+
+        fun mapX(i: Int): Float = leftPad + (i.toFloat() / (series.size - 1)) * w
+        fun mapY(v: Float): Float = topPad + (1f - (v - yMin) / ySpan) * h
+
+        // Rejilla horizontal
+        val rows = 4
+        repeat(rows - 1) { r ->
+            val y = topPad + (h / (rows - 1)) * (r + 1)
+            drawLine(gridColor, Offset(leftPad, y), Offset(leftPad + w, y), strokeWidth = 1f)
         }
-        for (j in 1..5) {
-            val x = stepX * j
-            drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
+
+        // Franja óptima
+        optimum?.let { r ->
+            val yTop = mapY(r.endInclusive)
+            val yBot = mapY(r.start)
+            drawRoundRect(
+                color = lineColor.copy(alpha = .15f),
+                topLeft = Offset(leftPad, yTop),
+                size = Size(w, yBot - yTop),
+                cornerRadius = CornerRadius(8f, 8f)
+            )
         }
-        // Línea simple
-        val points = listOf(
-            Offset(0f, size.height * 0.65f),
-            Offset(size.width * 0.18f, size.height * 0.35f),
-            Offset(size.width * 0.36f, size.height * 0.55f),
-            Offset(size.width * 0.54f, size.height * 0.30f),
-            Offset(size.width * 0.72f, size.height * 0.50f),
-            Offset(size.width * 0.90f, size.height * 0.28f),
-            Offset(size.width, size.height * 0.40f),
-        )
-        for (k in 0 until points.lastIndex) {
-            drawLine(
-                color = lineColor,
-                start = points[k],
-                end = points[k + 1],
-                strokeWidth = 4f
+
+        // Path de la serie
+        val path = Path().apply {
+            moveTo(mapX(0), mapY(series.first()))
+            for (i in 1 until series.size) lineTo(mapX(i), mapY(series[i]))
+        }
+        val area = Path().apply {
+            addPath(path)
+            lineTo(mapX(series.lastIndex), topPad + h)
+            lineTo(mapX(0), topPad + h)
+            close()
+        }
+
+        // Ejes
+        val x0 = leftPad
+        val y0 = topPad + h
+        drawLine(axisColor, Offset(x0, y0), Offset(leftPad + w, y0), strokeWidth = 2f) // X
+        drawLine(axisColor, Offset(x0, y0), Offset(x0, topPad),    strokeWidth = 2f) // Y
+
+        // Ticks + etiquetas Y
+        val yTicks = 4
+        for (i in 0..yTicks) {
+            val t = i / yTicks.toFloat()
+            val y = topPad + h * (1f - t)
+            drawLine(axisColor, Offset(x0 - 6f, y), Offset(x0, y), strokeWidth = 2f)
+            // valor numérico
+            val value = yMin + ySpan * t
+            drawContext.canvas.nativeCanvas.drawText(
+                String.format(Locale.US, "%.1f", value),
+                x0 - 8.dp.toPx(), // a la izquierda del eje
+                y + labelPaint.textSize / 3f,
+                labelPaint.apply { textAlign = Paint.Align.RIGHT }
+            )
+        }
+
+        // Ticks + etiquetas X (máx. 5)
+        val xTickCount = min(5, series.lastIndex.coerceAtLeast(1))
+        for (j in 0..xTickCount) {
+            val idx = ((series.lastIndex) * j / xTickCount)
+            val x = mapX(idx)
+            drawLine(axisColor, Offset(x, y0), Offset(x, y0 + 6f), strokeWidth = 2f)
+            val label = xLabels.getOrNull(idx) ?: idx.toString()
+            drawContext.canvas.nativeCanvas.drawText(
+                label,
+                x, y0 + 16.dp.toPx(),
+                labelPaint.apply { textAlign = Paint.Align.CENTER }
+            )
+        }
+
+        // Área + línea con “reveal”
+        val revealW = leftPad + w * progress
+        withTransform({
+            clipRect(left = 0f, top = 0f, right = revealW, bottom = size.height)
+        }) {
+            drawPath(
+                path = area,
+                brush = Brush.verticalGradient(
+                    listOf(lineColor.copy(alpha = .28f), lineColor.copy(alpha = .05f)),
+                    startY = topPad, endY = topPad + h
+                )
+            )
+            drawPath(path = path, color = lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
+        }
+
+        // Punto final
+        val last = Offset(mapX(series.lastIndex), mapY(series.last()))
+        drawCircle(lineColor.copy(alpha = .25f), radius = 14f, center = last)
+        drawCircle(lineColor, radius = 6f, center = last)
+
+        // Labels de ejes (opcionales)
+        yLabel?.let {
+            drawContext.canvas.nativeCanvas.drawText(
+                it, x0 - 22.dp.toPx(), topPad - 6.dp.toPx(), axisPaint.apply { textAlign = Paint.Align.LEFT }
+            )
+        }
+        // X siempre “Tiempo” si no envías otra cosa via xLabels
+        if (xLabels.isNotEmpty()) {
+            drawContext.canvas.nativeCanvas.drawText(
+                "Tiempo", leftPad + w / 2f, size.height - 4.dp.toPx(),
+                axisPaint.apply { textAlign = Paint.Align.CENTER }
             )
         }
     }
 }
+
+/* ===================== Datos/formatos ===================== */
+
+private fun optimumRange(metric: Metric): ClosedFloatingPointRange<Float>? =
+    when (metric) {
+        Metric.PH        -> 5.8f..6.2f
+        Metric.ORP       -> 650f..750f
+        Metric.WaterTemp -> 20f..23f
+        Metric.AirTemp   -> 22f..25f
+        Metric.Humidity  -> 50f..70f
+        Metric.Level     -> null
+    }
+
+private fun formatValue(metric: Metric, v: Float): String =
+    when (metric) {
+        Metric.PH        -> String.format(Locale.US, "%.1f", v)
+        Metric.ORP       -> "${v.roundToInt()} mV"
+        Metric.WaterTemp -> "${v.roundToInt()}°"
+        Metric.AirTemp   -> "${v.roundToInt()}°"
+        Metric.Humidity  -> "${v.roundToInt()} %"
+        Metric.Level     -> "${v.roundToInt()} %"
+    }
+
+private fun generateDemoSeries(range: TimeRange, metric: Metric): List<Float> {
+    // serie suave por rango (sin dependencias externas)
+    val n = when (range) {
+        TimeRange.Today  -> 12
+        TimeRange.Last7d -> 28
+        TimeRange.Last30d -> 60
+        TimeRange.Last90d -> 90
+        TimeRange.All -> 120
+    }
+
+    val base = when (metric) {
+        Metric.PH        -> 6.0f to 0.25f
+        Metric.ORP       -> 700f to 60f
+        Metric.WaterTemp -> 22f to 2.5f
+        Metric.AirTemp   -> 24f to 4f
+        Metric.Humidity  -> 60f to 12f
+        Metric.Level     -> 75f to 18f
+    }
+
+    val (center, amp) = base
+    return List(n) { i ->
+        val t = i / n.toFloat()
+        val wave = kotlin.math.sin(t * 6.283f) * amp * 0.35f
+        val drift = (i % 7 - 3) * (amp * 0.02f)
+        center + wave + drift
+    }
+}
+
+/* ===================== Enums ===================== */
 
 private enum class TimeRange(val label: String) {
     Today("Hoy"), Last7d("7 días"), Last30d("30 días"), Last90d("90 días"), All("Todo")

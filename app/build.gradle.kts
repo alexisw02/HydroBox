@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.hydrobox.app"
     compileSdk = 36
+
     defaultConfig {
         applicationId = "com.hydrobox.app"
         minSdk = 24
@@ -27,6 +28,24 @@ android {
         }
     }
 
+    packaging {
+        resources {
+            // ✅ sin “/” inicial y usando setOf(...)
+            excludes += setOf(
+                "META-INF/INDEX.LIST",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                // a veces también aparece con HiveMQ/Netty:
+                "META-INF/io.netty.versions.properties"
+            )
+            // (opcional) en vez de excluir, podrías hacer pickFirst; no uses ambas para el mismo archivo
+            // pickFirsts += setOf("META-INF/INDEX.LIST")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -36,7 +55,6 @@ android {
 }
 
 dependencies {
-
     implementation(libs.coil.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -51,7 +69,7 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.android)   // ✅ deja solo UNA línea
     implementation(libs.material)
 
     implementation(libs.androidx.room.runtime)
@@ -59,6 +77,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.datastore.preferences)
+
+    // HiveMQ MQTT v1.3.10 desde el version catalog
+    implementation(libs.hivemq.mqtt.client)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -68,3 +89,4 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
+
