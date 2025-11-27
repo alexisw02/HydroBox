@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.DeviceThermostat
 import androidx.compose.material.icons.filled.InvertColors
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Speed
+import com.hydrobox.app.api.HydroApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -48,36 +50,147 @@ import com.hydrobox.app.R
 import kotlin.math.absoluteValue
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.derivedStateOf
+import android.content.Context
 
+// Ahora incluye rangos de ORP y Nivel del agua
 private data class CropSpec(
-    val id: String,
+    val remoteId: Int,
+    val code: String,
     val name: String,
     val imageRes: Int,
     val totalDays: Int,
     val airTempRange: String,
     val humidityRange: String,
     val waterTempRange: String,
-    val phRange: String
+    val phRange: String,
+    val orpRange: String,
+    val levelRange: String
 )
 
+// Valores de ORP / Nivel puedes ajustarlos luego si lo deseas
 private val cropsCatalog = listOf(
-    CropSpec("lechuga", "Lechuga", R.drawable.crop_lechuga, 20, "22°–25°", "50–70 %", "22°–25°", "5.8–6.5"),
-    CropSpec("espinaca", "Espinaca", R.drawable.crop_espinaca, 30, "16°–24°", "50–70 %", "20°–23°", "6.0–7.0"),
-    CropSpec("rucula", "Rúcula", R.drawable.crop_rucula, 20, "18°–24°", "50–70 %", "20°–23°", "6.0–6.8"),
-    CropSpec("acelga", "Acelga", R.drawable.crop_acelga, 35, "18°–24°", "50–70 %", "20°–23°", "6.0–7.0"),
-    CropSpec("albahaca", "Albahaca", R.drawable.crop_albahaca, 21, "22°–30°", "40–60 %", "22°–25°", "5.5–6.5"),
-    CropSpec("mostaza", "Mostaza", R.drawable.crop_mostaza, 25, "15°–25°", "50–70 %", "18°–22°", "6.0–7.0")
+    CropSpec(
+        1, "lechuga",  "Lechuga",  R.drawable.crop_lechuga,  20,
+        airTempRange = "22°–25°",
+        humidityRange = "50–70 %",
+        waterTempRange = "22°–25°",
+        phRange = "5.8–6.5",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    ),
+    CropSpec(
+        2, "espinaca", "Espinaca", R.drawable.crop_espinaca, 30,
+        airTempRange = "16°–24°",
+        humidityRange = "50–70 %",
+        waterTempRange = "20°–23°",
+        phRange = "6.0–7.0",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    ),
+    CropSpec(
+        3, "rucula",   "Rúcula",   R.drawable.crop_rucula,   20,
+        airTempRange = "18°–24°",
+        humidityRange = "50–70 %",
+        waterTempRange = "20°–23°",
+        phRange = "6.0–6.8",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    ),
+    CropSpec(
+        4, "acelga",   "Acelga",   R.drawable.crop_acelga,   35,
+        airTempRange = "18°–24°",
+        humidityRange = "50–70 %",
+        waterTempRange = "20°–23°",
+        phRange = "6.0–7.0",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    ),
+    CropSpec(
+        5, "albahaca", "Albahaca", R.drawable.crop_albahaca, 21,
+        airTempRange = "22°–30°",
+        humidityRange = "40–60 %",
+        waterTempRange = "22°–25°",
+        phRange = "5.5–6.5",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    ),
+    CropSpec(
+        6, "mostaza",  "Mostaza",  R.drawable.crop_mostaza,  25,
+        airTempRange = "15°–25°",
+        humidityRange = "50–70 %",
+        waterTempRange = "18°–22°",
+        phRange = "6.0–7.0",
+        orpRange = "250–400 mV",
+        levelRange = "80–100 %"
+    )
 )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CropsScreen(paddingValues: PaddingValues) {
+    val context = LocalContext.current
+    val prefs = remember {
+        context.getSharedPreferences("crop_cycle_prefs", Context.MODE_PRIVATE)
+    }
     val scrollState = rememberScrollState()
 
     var activeIndex by remember { mutableIntStateOf(0) }
-    var activeDaysElapsed by remember { mutableIntStateOf(12) }
+    var activeDaysElapsed by remember { mutableIntStateOf(1) }
     val pagerState = rememberPagerState(pageCount = { cropsCatalog.size })
     var confirmForIndex by remember { mutableStateOf<Int?>(null) }
+
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    // Ahora priorizamos lo guardado en SharedPreferences.
+    LaunchedEffect(Unit) {
+        val savedId = prefs.getInt("remote_id", -1).takeIf { it != -1 }
+        var savedStart = prefs.getLong("start_epoch", -1L).takeIf { it > 0L }
+
+        var apiError: String? = null
+        val actual = try {
+            HydroApi.getHortalizaActual()
+        } catch (e: Exception) {
+            apiError = "No se pudo cargar la hortaliza actual"
+            null
+        }
+
+        // 1) Preferimos lo que está guardado localmente
+        val chosenId = savedId ?: actual?.id
+
+        if (chosenId != null) {
+            // Si no había start_epoch lo inicializamos ahora
+            if (savedStart == null) {
+                savedStart = System.currentTimeMillis()
+                prefs.edit()
+                    .putInt("remote_id", chosenId)
+                    .putLong("start_epoch", savedStart!!)
+                    .apply()
+            }
+
+            val idx = cropsCatalog.indexOfFirst { it.remoteId == chosenId }
+            if (idx != -1) {
+                activeIndex = idx
+                activeDaysElapsed = computeDaysElapsed(savedStart!!)
+                pagerState.scrollToPage(idx)
+            }
+        } else {
+            // Primer arranque y API caída → fallback a la primera hortaliza
+            val fallbackId = cropsCatalog.first().remoteId
+            val now = System.currentTimeMillis()
+            prefs.edit()
+                .putInt("remote_id", fallbackId)
+                .putLong("start_epoch", now)
+                .apply()
+            activeIndex = 0
+            activeDaysElapsed = 1
+            pagerState.scrollToPage(0)
+        }
+
+        errorMsg = apiError
+        loading = false
+    }
 
     Column(
         Modifier
@@ -94,6 +207,20 @@ fun CropsScreen(paddingValues: PaddingValues) {
             color = MaterialTheme.colorScheme.onBackground
         )
 
+        if (loading) {
+            Text(
+                "Cargando hortaliza actual...",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (errorMsg != null) {
+            Text(
+                errorMsg!!,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
         Box {
             HorizontalPager(
                 state = pagerState,
@@ -102,13 +229,16 @@ fun CropsScreen(paddingValues: PaddingValues) {
                 pageSize = PageSize.Fill
             ) { page ->
                 val crop = cropsCatalog[page]
-                val rawOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                val rawOffset = (pagerState.currentPage - page) +
+                        pagerState.currentPageOffsetFraction
                 val absOffset = rawOffset.absoluteValue
                 val t = 1f - absOffset.coerceIn(0f, 1f)
 
                 val scale = 0.95f + 0.05f * t
                 val alpha = 0.85f + 0.15f * t
-                val haloAlpha by animateFloatAsState(if (page == pagerState.currentPage) 0.22f else 0f)
+                val haloAlpha by animateFloatAsState(
+                    if (page == pagerState.currentPage) 0.22f else 0f
+                )
 
                 val borderBrush = Brush.linearGradient(
                     listOf(
@@ -127,7 +257,11 @@ fun CropsScreen(paddingValues: PaddingValues) {
                             scaleY = scale
                             this.alpha = alpha
                         }
-                        .shadow(elevation = 10.dp, shape = RoundedCornerShape(22.dp), clip = false)
+                        .shadow(
+                            elevation = 10.dp,
+                            shape = RoundedCornerShape(22.dp),
+                            clip = false
+                        )
                         .clip(RoundedCornerShape(22.dp))
                         .background(
                             Brush.radialGradient(
@@ -145,12 +279,14 @@ fun CropsScreen(paddingValues: PaddingValues) {
                         )
                         .noRippleClickable {
                             if (page != activeIndex) {
-                                val remaining = cropsCatalog[activeIndex].totalDays - activeDaysElapsed
-                                if (remaining > 0) confirmForIndex = page
-                                else {
+                                val remaining =
+                                    cropsCatalog[activeIndex].totalDays - activeDaysElapsed
+                                if (remaining > 0) {
+                                    confirmForIndex = page
+                                } else {
                                     activeIndex = page
-                                    activeDaysElapsed = 0
-                                    // TODO: persistir selección
+                                    activeDaysElapsed = 1
+                                    // si quisieras persistir sin dialog, aquí
                                 }
                             }
                         }
@@ -182,11 +318,19 @@ fun CropsScreen(paddingValues: PaddingValues) {
                 onClick = {},
                 enabled = false,
                 label = { Text("Toca la imagen para seleccionar") },
-                leadingIcon = { Icon(Icons.Filled.Opacity, null, modifier = Modifier.size(16.dp)) }
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Opacity,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             )
         }
 
         val currentCrop = cropsCatalog[pagerState.currentPage]
+
+        // AHORA: 6 tarjetas, una por cada sensor con su rango ideal
         val cards = remember(currentCrop) {
             listOf(
                 SensorCardData(
@@ -212,18 +356,31 @@ fun CropsScreen(paddingValues: PaddingValues) {
                     valueText = currentCrop.phRange,
                     subtitle = "Rango óptimo",
                     icon = { Icon(Icons.Filled.InvertColors, null) }
+                ),
+                SensorCardData(
+                    title = "ORP",
+                    valueText = currentCrop.orpRange,
+                    subtitle = "Rango óptimo",
+                    icon = { Icon(Icons.Filled.Speed, null) }
+                ),
+                SensorCardData(
+                    title = "Nivel del agua",
+                    valueText = currentCrop.levelRange,
+                    subtitle = "Rango óptimo",
+                    icon = { Icon(Icons.Filled.Opacity, null) }
                 )
             )
         }
+
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TimeEstimateInfoCard(
-                isActive    = (pagerState.currentPage == activeIndex),
+                isActive = (pagerState.currentPage == activeIndex),
                 daysElapsed = activeDaysElapsed,
-                totalDays   = currentCrop.totalDays
+                totalDays = currentCrop.totalDays
             )
 
             SensorsCarouselClone(
-                cards     = cards,
+                cards = cards,
                 isCompact = pagerState.currentPage != activeIndex
             )
         }
@@ -246,15 +403,37 @@ fun CropsScreen(paddingValues: PaddingValues) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    activeIndex = pendingIndex
-                    activeDaysElapsed = 0
-                    confirmForIndex = null
-                    // TODO: persistir selección
-                }) { Text("Abandonar y cambiar") }
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val ok = HydroApi.cambiarHortaliza(pendingCrop.remoteId)
+                                if (ok) {
+                                    val now = System.currentTimeMillis()
+                                    prefs.edit()
+                                        .putInt("remote_id", pendingCrop.remoteId)
+                                        .putLong("start_epoch", now)
+                                        .apply()
+
+                                    activeIndex = pendingIndex
+                                    activeDaysElapsed = 1
+                                    pagerState.scrollToPage(pendingIndex)
+                                }
+                            } catch (_: Exception) {
+                                // aquí podrías mostrar un snackbar
+                            } finally {
+                                confirmForIndex = null
+                            }
+                        }
+                    }
+                ) {
+                    Text("Abandonar y cambiar")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { confirmForIndex = null }) { Text("Cancelar") }
+                TextButton(onClick = { confirmForIndex = null }) {
+                    Text("Cancelar")
+                }
             }
         )
     }
@@ -267,7 +446,8 @@ private fun TimeEstimateInfoCard(
     totalDays: Int
 ) {
     val progress = if (isActive) {
-        (daysElapsed.coerceIn(0, totalDays).toFloat() / totalDays.toFloat().coerceAtLeast(1f))
+        (daysElapsed.coerceIn(0, totalDays).toFloat() /
+                totalDays.toFloat().coerceAtLeast(1f))
     } else 0f
 
     Card(
@@ -276,8 +456,15 @@ private fun TimeEstimateInfoCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Tiempo estimado", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "Tiempo estimado",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
             Text(
                 "Esta hortaliza toma un total de $totalDays días en cultivar.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -292,7 +479,10 @@ private fun TimeEstimateInfoCard(
                         .height(8.dp)
                         .clip(RoundedCornerShape(6.dp))
                 )
-                Text("Día $daysElapsed de $totalDays", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Día $daysElapsed de $totalDays",
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
@@ -413,7 +603,6 @@ private fun SensorCardClone(
 
     val titleStyle =
         if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium
-    // ↓ valor más contenido en compacto para que no empuje la altura
     val valueStyle =
         if (compact) MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black)
         else MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black)
@@ -477,3 +666,10 @@ private fun Modifier.borderIf(
     shape: Shape
 ): Modifier =
     if (condition) this.then(Modifier.border(width, brush, shape)) else this
+
+private fun computeDaysElapsed(startEpoch: Long, now: Long = System.currentTimeMillis()): Int {
+    val millisPerDay = 86_400_000L
+    val diff = (now - startEpoch).coerceAtLeast(0L)
+    val days = (diff / millisPerDay).toInt() + 1
+    return days.coerceAtLeast(1)
+}

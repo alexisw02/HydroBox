@@ -6,8 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,18 +17,25 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.hydrobox.app.api.ApiSensor
+import com.hydrobox.app.api.HydroApi
 
 @Composable
 fun SensorsScreen(paddingValues: PaddingValues) {
-    val items = remember {
-        listOf(
-            "Temperatura del aire",
-            "Humedad del aire",
-            "Temperatura del agua",
-            "pH del agua",
-            "ORP",
-            "Nivel del agua"
-        )
+    var sensores by remember { mutableStateOf<List<ApiSensor>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var detailSensor by remember { mutableStateOf<ApiSensor?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            sensores = HydroApi.getSensores()
+            errorMsg = null
+        } catch (e: Exception) {
+            errorMsg = "No se pudieron cargar los sensores registrados."
+        } finally {
+            loading = false
+        }
     }
 
     Column(
@@ -44,14 +50,42 @@ fun SensorsScreen(paddingValues: PaddingValues) {
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
 
-        items.forEach { name ->
-            DeviceRowPill(
-                title = name,
-                onDetails = { /* navegar a detalle */ }
-            )
+        when {
+            loading -> {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            errorMsg != null -> {
+                Text(
+                    errorMsg!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            else -> {
+                sensores.forEach { sensor ->
+                    DeviceRowPill(
+                        title = sensor.nombre.ifBlank { "Sensor ${sensor.id}" },
+                        onDetails = { detailSensor = sensor }
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.weight(1f))
+    }
+
+    detailSensor?.let { sensor ->
+        SensorDetailsDialog(
+            sensor = sensor,
+            onDismiss = { detailSensor = null }
+        )
     }
 }
 
@@ -130,4 +164,39 @@ private fun DeviceRowPill(
             }
         }
     }
+}
+
+@Composable
+private fun SensorDetailsDialog(
+    sensor: ApiSensor,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cerrar")
+            }
+        },
+        title = {
+            Text(sensor.nombre.ifBlank { "Sensor ${sensor.id}" })
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                sensor.codigo?.let { Text("Código: $it") }
+                sensor.tipo?.let { Text("Tipo: $it") }
+                sensor.unidad?.let { Text("Unidad de medida: $it") }
+                sensor.descripcion?.let { Text(it) }
+
+                if (
+                    sensor.codigo == null &&
+                    sensor.tipo == null &&
+                    sensor.unidad == null &&
+                    sensor.descripcion == null
+                ) {
+                    Text("No hay características adicionales registradas.")
+                }
+            }
+        }
+    )
 }

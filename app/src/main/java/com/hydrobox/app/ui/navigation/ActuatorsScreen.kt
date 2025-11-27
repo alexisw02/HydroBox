@@ -21,9 +21,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.hydrobox.app.mqtt.HydroMqtt   // <— IMPORTANTE
-
-/* ========= Modelo simple ========= */
+import com.hydrobox.app.mqtt.HydroMqtt
 
 private enum class DeviceKind { Switchable, Doser }
 
@@ -33,12 +31,9 @@ private data class DeviceRow(
     val isOn: MutableState<Boolean> = mutableStateOf(false) // solo para Switchable
 )
 
-/* ========= Pantalla ========= */
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActuatorsScreen(paddingValues: PaddingValues) {
-    // Lista con tipos
     val devices = remember {
         listOf(
             DeviceRow("Bomba de agua", DeviceKind.Switchable),
@@ -50,7 +45,6 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
         )
     }
 
-    // Bottom sheet de dosificación
     var dosingDevice by remember { mutableStateOf<DeviceRow?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -72,9 +66,7 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
                 kind = row.kind,
                 isOn = row.isOn,
                 onToggle = { new ->
-                    // 1) Refleja el estado en UI
                     row.isOn.value = new
-                    // 2) Envía orden MQTT
                     val id = deviceIdFor(row.name)
                     HydroMqtt.sendSwitch(id, new)
                 },
@@ -98,12 +90,9 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
             DoseSheet(
                 deviceName = dosingDevice!!.name,
                 onStartAuto = {
-                    // Si más adelante defines perfiles, puedes publicar otro topic/JSON aquí.
-                    // Por ahora lo cerramos.
                     dosingDevice = null
                 },
                 onStartManual = { ml ->
-                    // Enviar comando de dosificación manual por MQTT
                     val id = deviceIdFor(dosingDevice!!.name)
                     HydroMqtt.sendDose(id, ml)
                     dosingDevice = null
@@ -113,8 +102,6 @@ fun ActuatorsScreen(paddingValues: PaddingValues) {
         }
     }
 }
-
-/** Mapea el nombre visible → ID del dispositivo que usa el Pi */
 private fun deviceIdFor(title: String): String =
     when {
         title.startsWith("Bomba", ignoreCase = true)        -> "pump"
@@ -183,7 +170,6 @@ private fun DeviceRowPill(
                     Spacer(Modifier.width(8.dp))
                 }
 
-                // Menú de acciones
                 Box {
                     FilledTonalIconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = null)
@@ -219,7 +205,6 @@ private fun DeviceRowPill(
     }
 }
 
-/** Degradado reutilizado */
 @Composable
 private fun pillBackgroundBrush(cs: ColorScheme): Brush {
     val isDark = cs.background.luminance() < 0.5f
@@ -241,8 +226,6 @@ private fun pillBackgroundBrush(cs: ColorScheme): Brush {
         )
     }
 }
-
-/* ========= Bottom sheet de dosificación ========= */
 
 @Composable
 private fun DoseSheet(

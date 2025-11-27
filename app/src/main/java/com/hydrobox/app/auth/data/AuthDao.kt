@@ -4,7 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AuthDao {
@@ -23,4 +23,9 @@ interface AuthDao {
 
     @androidx.room.Update
     suspend fun update(user: UserEntity)
+
+    // ✅ nueva función para login con backend
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(user: UserEntity): Long
 }
+

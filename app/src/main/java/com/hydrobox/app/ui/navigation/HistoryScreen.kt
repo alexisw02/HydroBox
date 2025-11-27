@@ -3,6 +3,8 @@ package com.hydrobox.app.ui.navigation
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.geometry.CornerRadius
+import com.hydrobox.app.api.HydroApi
+import com.hydrobox.app.api.ApiMedicion
 import java.util.Locale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.sp
@@ -50,9 +52,24 @@ fun HistoryScreen(paddingValues: PaddingValues) {
     var range by remember { mutableStateOf(TimeRange.Last7d) }
     var metric by remember { mutableStateOf(Metric.PH) }
 
-    // Serie demo (coherente con rango/metric)
-    val series by remember(range, metric) { mutableStateOf(generateDemoSeries(range, metric)) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var records by remember { mutableStateOf<List<ApiMedicion>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        try {
+            records = HydroApi.getRegistroMediciones()
+        } catch (e: Exception) {
+            error = "No se pudieron cargar las mediciones"
+        } finally {
+            loading = false
+        }
+    }
+
     val optimum by remember(metric) { mutableStateOf(optimumRange(metric)) }
+    val series by remember(records, range, metric) {
+        mutableStateOf(buildSeriesFromApi(records, metric, range))
+    }
 
     Column(
         Modifier
@@ -71,6 +88,21 @@ fun HistoryScreen(paddingValues: PaddingValues) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        if (loading) {
+            Text(
+                "Cargando mediciones...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (error != null) {
+            Text(
+                error!!,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         // ===================== Filtros =====================
         SectionTitle("Rango")
@@ -111,28 +143,34 @@ fun HistoryScreen(paddingValues: PaddingValues) {
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
-                // NUEVO: etiquetas para ejes
                 val currentMetric = metric
-                val yAxisLabel = currentMetric.label           // “pH”, “Temp Agua”, etc.
+                val yAxisLabel = currentMetric.label
+
                 val xLabels = remember(range, series) {
-                    // Por ahora, índices 0..N (cuando tengas fechas, cámbialo aquí)
+                    // Por ahora solo índices; cuando tengamos fecha/hora real se cambia aquí
                     List(series.size) { i -> i.toString() }
                 }
 
-                TrendChart(
-                    series   = series,
-                    optimum  = optimum,
-                    lineColor = BrandPrimary,
-                    xLabels  = xLabels,     // ← nuevo
-                    yLabel   = yAxisLabel,  // ← nuevo
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                )
+                if (series.isEmpty()) {
+                    Text(
+                        "Sin datos para esta métrica.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    TrendChart(
+                        series   = series,
+                        optimum  = optimum,
+                        lineColor = BrandPrimary,
+                        xLabels  = xLabels,
+                        yLabel   = yAxisLabel,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                    )
+                }
 
-                // Se queda igual
-                StatsRow(series = series, metric = metric)
+                StatsRow(series = if (series.isEmpty()) generateDemoSeries(range, metric) else series, metric = metric)
             }
         }
 
@@ -224,7 +262,6 @@ private fun TimelineEventRow(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Línea vertical + punto
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 Modifier
@@ -282,7 +319,6 @@ private fun TrendChart(
         label = "reveal"
     )
 
-    // Colores/medidas fuera del Canvas
     val axisColor   = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f)
     val gridColor   = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .15f)
     val textColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = .9f).toArgb()
@@ -290,7 +326,6 @@ private fun TrendChart(
     val fontPxSmall = with(density) { 11.sp.toPx() }
     val fontPxAxis  = with(density) { 12.sp.toPx() }
 
-    // Paints nativos para texto
     val labelPaint = remember(textColor, fontPxSmall) {
         Paint().apply { isAntiAlias = true; color = textColor; textSize = fontPxSmall }
     }
@@ -301,16 +336,14 @@ private fun TrendChart(
     Canvas(modifier.padding(12.dp)) {
         if (series.size < 2) return@Canvas
 
-        // Márgenes internos
-        val leftPad   = 32.dp.toPx()  // más espacio para etiquetas Y
+        val leftPad   = 32.dp.toPx()
         val rightPad  = 10.dp.toPx()
         val topPad    = 8.dp.toPx()
-        val bottomPad = 24.dp.toPx()  // espacio para etiquetas X
+        val bottomPad = 24.dp.toPx()
 
         val w = size.width  - leftPad - rightPad
         val h = size.height - topPad  - bottomPad
 
-        // Escala
         val sMin = series.minOrNull()!!
         val sMax = series.maxOrNull()!!
         val yMin = min(optimum?.start ?: sMin, sMin)
@@ -320,14 +353,12 @@ private fun TrendChart(
         fun mapX(i: Int): Float = leftPad + (i.toFloat() / (series.size - 1)) * w
         fun mapY(v: Float): Float = topPad + (1f - (v - yMin) / ySpan) * h
 
-        // Rejilla horizontal
         val rows = 4
         repeat(rows - 1) { r ->
             val y = topPad + (h / (rows - 1)) * (r + 1)
             drawLine(gridColor, Offset(leftPad, y), Offset(leftPad + w, y), strokeWidth = 1f)
         }
 
-        // Franja óptima
         optimum?.let { r ->
             val yTop = mapY(r.endInclusive)
             val yBot = mapY(r.start)
@@ -339,7 +370,6 @@ private fun TrendChart(
             )
         }
 
-        // Path de la serie
         val path = Path().apply {
             moveTo(mapX(0), mapY(series.first()))
             for (i in 1 until series.size) lineTo(mapX(i), mapY(series[i]))
@@ -351,29 +381,25 @@ private fun TrendChart(
             close()
         }
 
-        // Ejes
         val x0 = leftPad
         val y0 = topPad + h
-        drawLine(axisColor, Offset(x0, y0), Offset(leftPad + w, y0), strokeWidth = 2f) // X
-        drawLine(axisColor, Offset(x0, y0), Offset(x0, topPad),    strokeWidth = 2f) // Y
+        drawLine(axisColor, Offset(x0, y0), Offset(leftPad + w, y0), strokeWidth = 2f)
+        drawLine(axisColor, Offset(x0, y0), Offset(x0, topPad),    strokeWidth = 2f)
 
-        // Ticks + etiquetas Y
         val yTicks = 4
         for (i in 0..yTicks) {
             val t = i / yTicks.toFloat()
             val y = topPad + h * (1f - t)
             drawLine(axisColor, Offset(x0 - 6f, y), Offset(x0, y), strokeWidth = 2f)
-            // valor numérico
             val value = yMin + ySpan * t
             drawContext.canvas.nativeCanvas.drawText(
                 String.format(Locale.US, "%.1f", value),
-                x0 - 8.dp.toPx(), // a la izquierda del eje
+                x0 - 8.dp.toPx(),
                 y + labelPaint.textSize / 3f,
                 labelPaint.apply { textAlign = Paint.Align.RIGHT }
             )
         }
 
-        // Ticks + etiquetas X (máx. 5)
         val xTickCount = min(5, series.lastIndex.coerceAtLeast(1))
         for (j in 0..xTickCount) {
             val idx = ((series.lastIndex) * j / xTickCount)
@@ -387,7 +413,6 @@ private fun TrendChart(
             )
         }
 
-        // Área + línea con “reveal”
         val revealW = leftPad + w * progress
         withTransform({
             clipRect(left = 0f, top = 0f, right = revealW, bottom = size.height)
@@ -402,18 +427,16 @@ private fun TrendChart(
             drawPath(path = path, color = lineColor, style = Stroke(width = 4f, cap = StrokeCap.Round))
         }
 
-        // Punto final
         val last = Offset(mapX(series.lastIndex), mapY(series.last()))
         drawCircle(lineColor.copy(alpha = .25f), radius = 14f, center = last)
         drawCircle(lineColor, radius = 6f, center = last)
 
-        // Labels de ejes (opcionales)
         yLabel?.let {
             drawContext.canvas.nativeCanvas.drawText(
-                it, x0 - 22.dp.toPx(), topPad - 6.dp.toPx(), axisPaint.apply { textAlign = Paint.Align.LEFT }
+                it, x0 - 22.dp.toPx(), topPad - 6.dp.toPx(),
+                axisPaint.apply { textAlign = Paint.Align.LEFT }
             )
         }
-        // X siempre “Tiempo” si no envías otra cosa via xLabels
         if (xLabels.isNotEmpty()) {
             drawContext.canvas.nativeCanvas.drawText(
                 "Tiempo", leftPad + w / 2f, size.height - 4.dp.toPx(),
@@ -445,14 +468,59 @@ private fun formatValue(metric: Metric, v: Float): String =
         Metric.Level     -> "${v.roundToInt()} %"
     }
 
+/**
+ * Construye la serie a partir de los datos reales de la API.
+ * Si no hay datos (o la métrica está vacía), cae a la serie demo.
+ */
+private fun buildSeriesFromApi(
+    records: List<ApiMedicion>,
+    metric: Metric,
+    range: TimeRange
+): List<Float> {
+    if (records.isEmpty()) {
+        return generateDemoSeries(range, metric)
+    }
+
+    val baseValues: List<Float> = records.mapNotNull { rec ->
+        when (metric) {
+            Metric.PH        -> rec.ph
+            Metric.ORP       -> rec.orp
+            Metric.WaterTemp -> rec.waterTemp
+            Metric.AirTemp   -> rec.airTemp
+            Metric.Humidity  -> rec.humidity
+            Metric.Level     -> rec.level
+        }
+    }
+
+    if (baseValues.isEmpty()) {
+        return generateDemoSeries(range, metric)
+    }
+
+    val maxPoints = when (range) {
+        TimeRange.Today   -> 24
+        TimeRange.Last7d  -> 7 * 24
+        TimeRange.Last30d -> 30 * 24
+        TimeRange.Last90d -> 90 * 24
+        TimeRange.All     -> baseValues.size
+    }
+
+    return if (baseValues.size <= maxPoints) {
+        baseValues
+    } else {
+        baseValues.takeLast(maxPoints)
+    }
+}
+
+/**
+ * Serie de fallback cuando no hay datos reales.
+ */
 private fun generateDemoSeries(range: TimeRange, metric: Metric): List<Float> {
-    // serie suave por rango (sin dependencias externas)
     val n = when (range) {
-        TimeRange.Today  -> 12
-        TimeRange.Last7d -> 28
+        TimeRange.Today   -> 12
+        TimeRange.Last7d  -> 28
         TimeRange.Last30d -> 60
         TimeRange.Last90d -> 90
-        TimeRange.All -> 120
+        TimeRange.All     -> 120
     }
 
     val base = when (metric) {
